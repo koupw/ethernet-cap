@@ -1,0 +1,35 @@
+{
+    "configurations": [
+      {
+        "name": "Win32",
+        "compilerPath": "C:/Software/mingw64/bin/gcc.exe",  // 显式指定GCC路径
+        "cStandard": "c23",                                      // 启用最新C标准
+        "cppStandard": "gnu++20",                                // GNU C++20扩展
+        "intelliSenseMode": "gcc-x64",
+        "includePath": [
+          "${workspaceFolder}/**",
+          "C:/Software/mingw64/include/**",            // MinGW系统头文件
+          "C:/Software/mingw64/lib/gcc/x86_64-w64-mingw32/14.2.0/include/**", // GCC内部头文件
+          "C:/Software/mingw64/x86_64-w64-mingw32/include/**"  // Windows API头文件
+        ],
+        "defines": [
+          "_DEBUG",
+          "UNICODE",
+          "_UNICODE",
+          "__GNUC__=14",                                       // 显式GCC主版本号
+          "__STDC_VERSION__=202311L"                          // 匹配C23标准
+        ],
+        "windowsSdkVersion": "10.0.19041.0",                   // 最新Windows SDK版本
+        //"compileCommands": "${workspaceFolder}/build/compile_commands.json",
+        "browse": {
+          "path": [
+            "${workspaceFolder}",
+            "C:/Software/mingw64/lib",
+            "C:/Software/mingw64/x86_64-w64-mingw32/lib"
+          ],
+          "limitSymbolsToIncludedHeaders": true
+        }
+      }
+    ],
+    "version": 4
+  }
