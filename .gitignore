@@ -1,6 +1,10 @@
 # 编译产物
 build/
 
+# Python 虚拟环境
+venv/
+__pycache__/
+
 # 编辑器临时文件
 *.swp
 *.swo

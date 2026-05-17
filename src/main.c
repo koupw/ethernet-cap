@@ -302,7 +302,7 @@ int main(int argc, char *argv[])
     /* ================================================================
      * 手动启动：轮询等待用户按 Enter
      * ================================================================ */
-    fprintf(stderr, "\n按 Enter 开始采集...\n");
+    fprintf(stderr, "\n按 Enter 开始采集... [__GUI_PROMPT__]\n");
     fflush(stderr);
 
     g_running = true;

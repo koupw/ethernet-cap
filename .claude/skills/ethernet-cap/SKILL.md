@@ -86,6 +86,7 @@ description: |
 | 环形缓冲区 | `ringbuf.c` / `ringbuf.h` | 固定大小环形缓冲，线程安全 push/pop |
 | 文件写入 | `writer.c` / `writer.h` | 从环形缓冲取数据，按大小切分写 bin 文件 |
 | 统计上报 | `stats.c` / `stats.h` | 收包计数、速率计算、`stats_total_bytes()` 供主线程查询累计量 |
+| GUI 启动器 | `gui/launcher.py` | Python tkinter GUI，参数配置、subprocess 启动 CLI、实时日志显示、自动 Enter |
 
 ### 数据流
 
@@ -116,6 +117,25 @@ description: |
   → 发送STOP命令(0x00) → 等待线程退出 → 排空缓冲
   → 关闭文件 → 释放资源 → 退出
 ```
+
+### GUI 启动器
+
+`gui/launcher.py` 是独立的 Python tkinter 程序，作为 CLI 的图形前端：
+
+**启动方式：**
+- 终端：`venv\Scripts\python.exe gui\launcher.py`
+- VS Code 任务：`Ctrl+Shift+P` → Run Task → `launch-gui`
+
+**核心机制：**
+- `subprocess.Popen` 启动 `ethernet-cap.exe`，`stdin/stdout/stderr` 全管道连接
+- `__GUI_PROMPT__` 标记：CLI 在等 Enter 提示中输出此标记，GUI 检测后自动向 stdin 写回车
+- **世代计数器**：每次 `start()` 递增 `_gen`，所有 `after()` 回调检查世代，防止快速启停时的竞态条件
+- **日志缓冲**：100ms 批量刷新，限制 10000 行防内存溢出
+- 停止信号：`CTRL_BREAK_EVENT`（`CREATE_NEW_PROCESS_GROUP`），失败回退 `terminate()`
+
+**协议标记：**
+- CLI stderr 输出 `[__GUI_PROMPT__]` → GUI 500ms 后自动发送 Enter
+- 修改 CLI 等待提示时，需保留此标记
 
 ## 编码约定
 

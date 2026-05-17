@@ -104,6 +104,29 @@
             "detail": "编译以太网上位机项目所有C文件"
         },
         {
+            "label": "launch-gui",
+            "type": "shell",
+            "command": "${workspaceFolder}/venv/Scripts/python.exe",
+            "args": [
+                "${workspaceFolder}/gui/launcher.py"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": [],
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "always",
+                "clear": false,
+                "focus": false,
+                "panel": "dedicated"
+            },
+            "detail": "启动以太网上位机 GUI 控制面板"
+        },
+        {
             "type": "cppbuild",
             "label": "C/C++: g++.exe 生成活动文件",
             "command": "C:\\Software\\mingw64\\bin\\g++.exe",
