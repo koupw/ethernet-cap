@@ -212,7 +212,7 @@ class LauncherApp:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                encoding="utf-8",
                 errors="replace",
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             )

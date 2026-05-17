@@ -372,8 +372,11 @@ int main(int argc, char *argv[])
         CloseHandle(h_stats);
     }
 
-    /* 发送停止采集命令 */
-    udp_send_cmd(cmd_sock, CMD_STOP);
+    /* 发送停止采集命令（最多重试 10 次，间隔 50ms） */
+    for (int i = 0; i < 10; i++) {
+        udp_send_cmd(cmd_sock, CMD_STOP);
+        Sleep(5);
+    }
 
     /* 排空缓冲区中剩余数据 */
     fprintf(stderr, "[MAIN] 排空缓冲区剩余数据...\n");
