@@ -9,3 +9,9 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# VS Code 配置（含机器相关路径）
+.vscode/
+
+# Claude Code 本地配置
+.claude/settings.local.json
