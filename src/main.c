@@ -224,6 +224,9 @@ int main(int argc, char *argv[])
     config_t cfg;
     if (parse_args(argc, argv, &cfg) != 0) return 1;
 
+    /* 控制台设为 UTF-8，解决中文乱码 */
+    SetConsoleOutputCP(CP_UTF8);
+
     /* 打印配置 */
     fprintf(stderr, "========================================\n");
     fprintf(stderr, "  以太网上位机\n");
@@ -231,7 +234,26 @@ int main(int argc, char *argv[])
     fprintf(stderr, "  下位机 IP:    %s\n", cfg.target_ip);
     fprintf(stderr, "  数据端口:     %hu\n", cfg.data_port);
     fprintf(stderr, "  命令端口:     %hu\n", cfg.cmd_port);
-    fprintf(stderr, "  输出目录:     %s\n", cfg.output_dir);
+    {
+        /* 路径来自 ACP 命令行参数，转为 UTF-8 再打印 */
+        int wlen = MultiByteToWideChar(CP_ACP, 0, cfg.output_dir, -1, NULL, 0);
+        wchar_t *wbuf = malloc((size_t)wlen * sizeof(wchar_t));
+        if (wbuf) {
+            MultiByteToWideChar(CP_ACP, 0, cfg.output_dir, -1, wbuf, wlen);
+            int u8len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, NULL, 0, NULL, NULL);
+            char *u8buf = malloc((size_t)u8len);
+            if (u8buf) {
+                WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, u8buf, u8len, NULL, NULL);
+                fprintf(stderr, "  输出目录:     %s\n", u8buf);
+                free(u8buf);
+            } else {
+                fprintf(stderr, "  输出目录:     %s\n", cfg.output_dir);
+            }
+            free(wbuf);
+        } else {
+            fprintf(stderr, "  输出目录:     %s\n", cfg.output_dir);
+        }
+    }
     fprintf(stderr, "  文件大小:     %u MB\n", cfg.file_size_mb);
     fprintf(stderr, "  缓冲大小:     %u MB\n", cfg.buf_size_mb);
     fprintf(stderr, "  接收超时:     %u 秒\n", cfg.timeout_sec);
@@ -306,12 +328,38 @@ int main(int argc, char *argv[])
     fflush(stderr);
 
     g_running = true;
-    while (g_running) {
-        if (_kbhit()) {
-            int ch = _getch();
-            if (ch == '\r' || ch == '\n') break;
+    {
+        HANDLE h_stdin = GetStdHandle(STD_INPUT_HANDLE);
+        DWORD stdin_type = (h_stdin == INVALID_HANDLE_VALUE)
+                         ? FILE_TYPE_UNKNOWN
+                         : GetFileType(h_stdin);
+        bool stdin_is_pipe = (stdin_type == FILE_TYPE_PIPE);
+
+        while (g_running) {
+            int ch = -1;
+
+            /* 控制台输入（终端直接运行） */
+            if (_kbhit()) {
+                ch = _getch();
+            }
+
+            /* 管道输入（GUI 通过 subprocess.PIPE 启动） */
+            if (ch < 0 && stdin_is_pipe) {
+                DWORD avail = 0;
+                if (PeekNamedPipe(h_stdin, NULL, 0, NULL, &avail, NULL)
+                    && avail > 0) {
+                    char c;
+                    DWORD nread = 0;
+                    if (ReadFile(h_stdin, &c, 1, &nread, NULL) && nread == 1)
+                        ch = (unsigned char)c;
+                }
+            }
+
+            if (ch >= 0 && (ch == '\r' || ch == '\n'))
+                break;
+
+            Sleep(50);
         }
-        Sleep(50);
     }
 
     if (!g_running) {

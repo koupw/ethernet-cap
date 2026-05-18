@@ -4,7 +4,23 @@
 #include <string.h>
 #include <windows.h>
 
-#define WRITE_CHUNK_SIZE (64 * 1024)  /* 单次从缓冲取数据的大小 */
+#define WRITE_CHUNK_SIZE (64 * 1024)
+
+/* ACP→UTF-8 转换后打印路径 */
+static void fprintf_path(const char *label, const char *path)
+{
+    int wlen = MultiByteToWideChar(CP_ACP, 0, path, -1, NULL, 0);
+    wchar_t *wbuf = malloc((size_t)wlen * sizeof(wchar_t));
+    if (!wbuf) { fprintf(stderr, "%s%s\n", label, path); return; }
+    MultiByteToWideChar(CP_ACP, 0, path, -1, wbuf, wlen);
+    int u8len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, NULL, 0, NULL, NULL);
+    char *u8buf = malloc((size_t)u8len);
+    if (!u8buf) { free(wbuf); fprintf(stderr, "%s%s\n", label, path); return; }
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, u8buf, u8len, NULL, NULL);
+    fprintf(stderr, "%s%s\n", label, u8buf);
+    free(u8buf);
+    free(wbuf);
+}  /* 单次从缓冲取数据的大小 */
 
 struct writer_t {
     ringbuf_t  *rb;
@@ -60,11 +76,11 @@ static int writer_open_next(writer_t *w)
 
     w->file = fopen(path, "wb");
     if (!w->file) {
-        fprintf(stderr, "无法创建文件: %s\n", path);
+        fprintf_path("无法创建文件: ", path);
         return -1;
     }
 
-    fprintf(stderr, "[FILE] 创建文件: %s\n", path);
+    fprintf_path("[FILE] 创建文件: ", path);
     return 0;
 }
 
