@@ -82,17 +82,18 @@ description: |
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| 入口/配置 | `main.c` | CLI 参数解析、初始化、信号注册、主循环 |
+| 入口/配置 | `main.c` | CLI 解析、初始化、`_kbhit`+`PeekNamedPipe` 双重 stdin 检测、`SetConsoleOutputCP(CP_UTF8)` 编码、主循环 |
 | UDP 通信 | `udp.c` / `udp.h` | socket 创建、bind、sendto/recvfrom 封装 |
 | 环形缓冲区 | `ringbuf.c` / `ringbuf.h` | 固定大小环形缓冲，线程安全 push/pop |
 | 文件写入 | `writer.c` / `writer.h` | 从环形缓冲取数据，按大小切分写 bin 文件 |
 | 统计上报 | `stats.c` / `stats.h` | 收包计数、速率计算、`stats_total_bytes()` 供主线程查询累计量 |
-| GUI 启动器 | `gui/launcher.py` | Python tkinter GUI，参数配置、subprocess 启动 CLI、实时日志显示、自动 Enter |
+| GUI 启动器 | `gui/launcher.py` | Python tkinter GUI，`subprocess.Popen` 启动 CLI（`CREATE_NO_WINDOW`）、参数持久化 `gui_config.json`、实时日志、自动 Enter |
+| 一键启动 | `run_gui.vbs` / `run_gui.bat` | VBS 无终端窗口启动（推荐桌面快捷方式）/ BAT 终端启动 |
 
 ### 数据流
 
 ```
-下位机 ──UDP:9001──▶ recvfrom() ──▶ ringbuf_push() ──▶ stats_add()
+下位机 ──UDP 数据端口──▶ recvfrom() ──▶ ringbuf_push() ──▶ stats_add()
                                         │
                                         ▼
                                    ringbuf_pop() ──▶ fwrite(.bin)
@@ -100,7 +101,7 @@ description: |
                                                   size >= 10MB?
                                                   切换新文件
 
-主线程每 100ms:
+主线程每 10ms:
   if (stats_total_bytes() >= total_size_mb * 1024^2) → g_running = false
 ```
 
@@ -124,14 +125,16 @@ description: |
 `gui/launcher.py` 是独立的 Python tkinter 程序，作为 CLI 的图形前端：
 
 **启动方式：**
-- 终端：`venv\Scripts\python.exe gui\launcher.py`
-- VS Code 任务：`Ctrl+Shift+P` → Run Task → `launch-gui`
+- 终端：`venv\Scripts\python.exe gui\launcher.py`（或用 `pythonw.exe` 无终端窗口）
+- 一键启动：双击 `run_gui.vbs`（推荐桌面快捷方式）或 `run_gui.bat`
+- 进程启动标志：`CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW`（无终端弹窗）
 
 **核心机制：**
 - `subprocess.Popen` 启动 `ethernet-cap.exe`，`stdin/stdout/stderr` 全管道连接
 - `__GUI_PROMPT__` 标记：CLI 在等 Enter 提示中输出此标记，GUI 检测后自动向 stdin 写回车
 - **世代计数器**：每次 `start()` 递增 `_gen`，所有 `after()` 回调检查世代，防止快速启停时的竞态条件
 - **日志缓冲**：100ms 批量刷新，限制 10000 行防内存溢出
+- **参数持久化**：点击"开始采集"时自动保存到 `gui_config.json`，下次启动自动加载
 - 停止信号：`CTRL_BREAK_EVENT`（`CREATE_NEW_PROCESS_GROUP`），失败回退 `terminate()`
 
 **协议标记：**
@@ -186,7 +189,7 @@ typedef struct {
 
 ### 退出信号处理
 
-Windows 下使用 `SetConsoleCtrlHandler` 注册回调，捕获 `CTRL_C_EVENT`、`CTRL_BREAK_EVENT`、`CTRL_CLOSE_EVENT`。设置 `g_running = false` 后主线程轮询（`_kbhit` 等 Enter / `Sleep(10)` 主循环）检测到标志变化即退出。
+Windows 下使用 `SetConsoleCtrlHandler` 注册回调，捕获 `CTRL_C_EVENT`、`CTRL_BREAK_EVENT`、`CTRL_CLOSE_EVENT`。设置 `g_running = false` 后主线程轮询检测到标志变化即退出。两个轮询循环：等 Enter 循环 `Sleep(50)`，采集监控循环 `Sleep(10)`。
 
 ### UDP API（`udp.h`）
 

@@ -19,12 +19,10 @@ build/ethernet-cap.exe -d <下位机IP> [选项]
 venv\Scripts\python.exe gui\launcher.py
 
 # 一键启动（双击即可，无终端窗口）
-run_gui.vbs          # 右键 → 发送到桌面快捷方式
+run_gui.vbs
 ```
-- `run_gui.bat`：终端下快速启动（会闪 cmd 窗口）
-- `run_gui.vbs`：无终端窗口启动，推荐桌面快捷方式使用
 
-VS Code: `Ctrl+Shift+B` 编译，`Ctrl+Shift+P` → Run Task → `launch-gui` 启动 GUI。
+VS Code: `Ctrl+Shift+B` 编译。
 
 ## 架构
 
