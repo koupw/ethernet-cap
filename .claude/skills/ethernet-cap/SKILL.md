@@ -4,7 +4,7 @@ description: |
   以太网上位机项目开发技能。当用户在此项目中请求开发、修改、讨论以太网上位机相关功能时触发。
   涵盖 UDP 通信、AD 数据采集、环形缓冲区、bin 文件落盘、Windows C 语言开发。
   关键词：以太网、上位机、UDP、AD采集、数据采集、收包、环形缓冲、bin文件。
-  本项目在 C:\UserFile\WorkSpace\CluadeWork\ethernet-cap 目录下。
+  本技能仅适用于当前项目目录。
 ---
 
 # 以太网上位机（Ethernet Capture）项目开发指引
@@ -52,6 +52,7 @@ description: |
 - 本机 IP：`--local-ip` 指定（空串 = INADDR_ANY）
 - 远端 IP：`-d` 指定（必需），既是数据来源也是命令目标
 - 数据 socket 绑定本机 IP:data_port，命令 socket bind 本机 IP 后 connect 远端
+- 内核 UDP 接收缓冲：`SO_RCVBUF` 设为 64MB（`bind` 之前设置），减少千兆线速下内核丢包
 
 ### 文件输出
 - 命名格式：`<启动时间>_<序号>.bin`
@@ -72,7 +73,7 @@ description: |
 │ 信号处理           │   │ stats_add() │   │ 文件切分     │   │ 带宽 Mbps    │
 │ _kbhit 等 Enter    │   │ 超时检测     │   │              │   │ 累计 MB      │
 │ 发 START / 创建线程 │   │              │   │              │   │              │
-│ 每 100ms 检查总量   │   │              │   │              │   │              │
+│ 每 10ms 检查总量   │   │              │   │              │   │              │
 │ 等待退出 / 清理     │   │              │   │              │   │              │
 └────────────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
 ```
@@ -112,7 +113,7 @@ description: |
   用户按 Enter → 发送START命令(0x01)
   → 启动收包线程 → 启动写盘线程 → 启动统计线程
   → [运行中: 收包 → 缓冲 → 写盘 → 统计打印]
-      ↓ 主线程每 100ms 检查总量上限
+      ↓ 主线程每 10ms 检查总量上限
   → 退出条件: Ctrl+C / 接收超时 / 总量达到上限
   → 发送STOP命令(0x00) → 等待线程退出 → 排空缓冲
   → 关闭文件 → 释放资源 → 退出
@@ -185,7 +186,7 @@ typedef struct {
 
 ### 退出信号处理
 
-Windows 下使用 `SetConsoleCtrlHandler` 注册回调，捕获 `CTRL_C_EVENT`、`CTRL_BREAK_EVENT`、`CTRL_CLOSE_EVENT`。设置 `g_running = false` 后主线程轮询（`_kbhit` 等 Enter / `Sleep(100)` 主循环）检测到标志变化即退出。
+Windows 下使用 `SetConsoleCtrlHandler` 注册回调，捕获 `CTRL_C_EVENT`、`CTRL_BREAK_EVENT`、`CTRL_CLOSE_EVENT`。设置 `g_running = false` 后主线程轮询（`_kbhit` 等 Enter / `Sleep(10)` 主循环）检测到标志变化即退出。
 
 ### UDP API（`udp.h`）
 

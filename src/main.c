@@ -406,7 +406,7 @@ int main(int argc, char *argv[])
                     break;
                 }
             }
-            Sleep(100);
+            Sleep(10);
         }
 
         /* 等待各线程退出 */
