@@ -6,12 +6,15 @@ Python 3 + tkinter，通过 subprocess 启动 ethernet-cap.exe
 import subprocess
 import signal
 import os
+import json
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 EXE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "build", "ethernet-cap.exe")
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "..", "gui_config.json")
 
 FLAG_SPEC = [
     ("target_ip",  "-d",          True),   # (key, flag, always_include)
@@ -48,6 +51,7 @@ class LauncherApp:
         self._flush_id = None
 
         self._build_ui()
+        self._load_config()
         self._check_exe()
 
     # ------------------------------------------------------------------
@@ -186,6 +190,29 @@ class LauncherApp:
             self.btn_start.config(state=tk.DISABLED)
 
     # ------------------------------------------------------------------
+    # 配置持久化
+    # ------------------------------------------------------------------
+    def _save_config(self):
+        data = {key: self.entries[key].get().strip()
+                for key in self.entries}
+        try:
+            with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except OSError:
+            pass
+
+    def _load_config(self):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return
+        for key, val in data.items():
+            if key in self.entries and isinstance(val, str):
+                self.entries[key].delete(0, tk.END)
+                self.entries[key].insert(0, val)
+
+    # ------------------------------------------------------------------
     # 启动 / 停止
     # ------------------------------------------------------------------
     def start(self):
@@ -193,6 +220,8 @@ class LauncherApp:
         if not target_ip:
             messagebox.showwarning("参数错误", "下位机 IP 不能为空")
             return
+
+        self._save_config()
 
         # 取消所有待处理的 after() 回调，并递增世代
         self._gen += 1
@@ -214,7 +243,8 @@ class LauncherApp:
                 stderr=subprocess.PIPE,
                 encoding="utf-8",
                 errors="replace",
-                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
+                              | subprocess.CREATE_NO_WINDOW,
             )
         except OSError as e:
             self._log(f"[ERR] 启动进程失败: {e}\n")
