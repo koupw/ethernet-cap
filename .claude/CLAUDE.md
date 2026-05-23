@@ -47,7 +47,7 @@ VS Code: `Ctrl+Shift+B` 编译。
 ## 关键设计决策
 
 - **数据格式**：UDP 载荷 = 原始 AD 采样数据，无协议头，无序号，透明写盘
-- **命令格式**：二进制单字节，`0x01` = START，`0x00` = STOP，通过 UDP 9002 发送
+- **命令格式**：二进制，START 命令支持自定义单/多字节（`--cmd-start` 指定 hex，默认 `0x01`），STOP 固定 `0x00`，通过 UDP 9002 发送
 - **端口约定**：`--data-port` = PC 端 `bind()` 监听端口（下位机→PC）；`--cmd-port` = 下位机端端口，PC `connect()` 后发送命令（PC→下位机）
 - **文件命名**：`<启动时间YYYYMMDD_HHmmss>_<序号0001起>.bin`，每 10MB 切分
 - **退出信号**：`SetConsoleCtrlHandler` 捕获 CTRL_C/BREAK/CLOSE，设 `g_running = false`

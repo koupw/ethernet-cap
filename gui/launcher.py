@@ -26,12 +26,14 @@ FLAG_SPEC = [
     ("buf_size",   "-b",          False),
     ("timeout",    "-t",          False),
     ("total_size", "-T",          False),
+    ("cmd_start",  "--cmd-start", False),
 ]
 
 DEFAULTS = {spec[0]: "" for spec in FLAG_SPEC}
 DEFAULTS.update({
     "data_port": "9001", "cmd_port": "9002", "output_dir": ".",
     "file_size": "10", "buf_size": "32", "timeout": "5", "total_size": "0",
+    "cmd_start": "01",
 })
 
 PROMPT_SENTINEL = "__GUI_PROMPT__"
@@ -81,6 +83,7 @@ class LauncherApp:
         self._add_row(left, "缓冲大小 (MB):", "buf_size",   False)
         self._add_row(left, "超时 (秒):",     "timeout",    False)
         self._add_row(left, "总量上限 (MB):", "total_size", False, note="0=无限制")
+        self._add_row(left, "开始命令 (hex):", "cmd_start", False, note="例: 01 02 03")
 
         btn_frame = ttk.Frame(left)
         btn_frame.pack(fill=tk.X, pady=(15, 0))

@@ -146,12 +146,42 @@ static void print_usage(const char *prog)
         "  -t <sec>        接收超时, 秒 (默认: %d)\n"
         "  -T <MB>         总采集量上限, MB (0=无限制, 默认: %d)\n"
         "  --local-ip <ip>  本机 IP 地址 (默认: INADDR_ANY)\n"
+        "  --cmd-start <hex> 自定义开始命令 (默认: 01, 示例: 01 02 03)\n"
         "  -h              显示本帮助\n",
         prog,
         DEFAULT_DATA_PORT, DEFAULT_CMD_PORT,
         DEFAULT_FILE_SIZE_MB, MAX_FILE_SIZE_MB,
         DEFAULT_BUF_SIZE_MB, DEFAULT_TIMEOUT_SEC,
         DEFAULT_TOTAL_SIZE_MB);
+}
+
+/* ================================================================
+ * 十六进制字符串解析：支持 "01" / "01 02 03" / "010203"
+ * ================================================================ */
+static int parse_hex_string(const char *str, uint8_t *out, size_t out_max, size_t *out_len)
+{
+    /* 先收集所有十六进制字符（跳过空格） */
+    char hex[CMD_START_MAX_LEN * 2 + 1];
+    size_t hlen = 0;
+    for (const char *p = str; *p; p++) {
+        if (*p == ' ' || *p == '\t') continue;
+        if (hlen >= sizeof(hex) - 1) return -1;
+        hex[hlen++] = *p;
+    }
+    hex[hlen] = '\0';
+
+    if (hlen == 0 || hlen % 2 != 0) return -1;
+
+    size_t nbytes = hlen / 2;
+    if (nbytes > out_max) return -1;
+
+    for (size_t i = 0; i < nbytes; i++) {
+        unsigned int byte;
+        if (sscanf(hex + i * 2, "%2x", &byte) != 1) return -1;
+        out[i] = (uint8_t)byte;
+    }
+    *out_len = nbytes;
+    return 0;
 }
 
 /* ================================================================
@@ -168,6 +198,8 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
     cfg->timeout_sec   = DEFAULT_TIMEOUT_SEC;
     cfg->total_size_mb  = DEFAULT_TOTAL_SIZE_MB;
     cfg->local_ip[0]    = '\0';
+    cfg->cmd_start[0]   = CMD_START;
+    cfg->cmd_start_len  = 1;
     strcpy(cfg->output_dir, ".");
 
     int i = 1;
@@ -194,6 +226,15 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
             cfg->total_size_mb = (uint32_t)atoi(argv[++i]);
         } else if (strcmp(argv[i], "--local-ip") == 0 && i + 1 < argc) {
             strncpy(cfg->local_ip, argv[++i], sizeof(cfg->local_ip) - 1);
+        } else if (strcmp(argv[i], "--cmd-start") == 0 && i + 1 < argc) {
+            const char *hex = argv[++i];
+            size_t len = 0;
+            if (parse_hex_string(hex, cfg->cmd_start, CMD_START_MAX_LEN, &len) != 0
+                || len == 0) {
+                fprintf(stderr, "错误: --cmd-start 无效的十六进制字符串: %s\n", hex);
+                return -1;
+            }
+            cfg->cmd_start_len = (uint8_t)len;
         } else {
             fprintf(stderr, "未知参数: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -262,6 +303,12 @@ int main(int argc, char *argv[])
     fprintf(stderr, "  总采集上限:   %u MB%s\n",
             cfg.total_size_mb,
             cfg.total_size_mb == 0 ? " (无限制)" : "");
+    {
+        fprintf(stderr, "  开始命令:    ");
+        for (uint8_t j = 0; j < cfg.cmd_start_len; j++)
+            fprintf(stderr, " %02X", cfg.cmd_start[j]);
+        fprintf(stderr, "\n");
+    }
     fprintf(stderr, "========================================\n");
 
     /* 注册信号处理器 */
@@ -374,7 +421,7 @@ int main(int argc, char *argv[])
     }
 
     /* 发送开始采集命令 */
-    udp_send_cmd(cmd_sock, CMD_START);
+    udp_send_cmd_bytes(cmd_sock, cfg.cmd_start, cfg.cmd_start_len);
 
     /* 接收线程参数 */
     recv_thread_arg_t recv_arg = { rb, data_sock, &g_running, false };

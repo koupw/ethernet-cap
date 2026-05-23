@@ -118,6 +118,20 @@ int udp_send_cmd(sock_handle_t sock, uint8_t cmd)
     return 0;
 }
 
+int udp_send_cmd_bytes(sock_handle_t sock, const uint8_t *data, size_t len)
+{
+    int ret = send((SOCKET)sock, (const char *)data, (int)len, 0);
+    if (ret == SOCKET_ERROR) {
+        fprintf(stderr, "发送命令失败 (%zu 字节): %d\n", len, WSAGetLastError());
+        return -1;
+    }
+    fprintf(stderr, "[CMD] 已发送命令 (%zu 字节):", len);
+    for (size_t i = 0; i < len; i++)
+        fprintf(stderr, " %02X", data[i]);
+    fprintf(stderr, "\n");
+    return 0;
+}
+
 int udp_recv_data(sock_handle_t sock, uint8_t *buf, size_t buf_len,
                   size_t *bytes_received)
 {

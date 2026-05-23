@@ -8,6 +8,7 @@
 /* 命令定义 */
 #define CMD_START  0x01
 #define CMD_STOP   0x00
+#define CMD_START_MAX_LEN 32
 
 /* 默认配置 */
 #define DEFAULT_DATA_PORT    9001
@@ -32,6 +33,8 @@ typedef struct {
     uint32_t timeout_sec;        /* 接收超时秒数 */
     char     local_ip[64];       /* 本机 IP 地址 (空串 = INADDR_ANY) */
     uint32_t total_size_mb;      /* 总采集量上限 MB (0 = 无限制) */
+    uint8_t  cmd_start[CMD_START_MAX_LEN]; /* 自定义开始命令字节 */
+    uint8_t  cmd_start_len;                /* 开始命令字节长度 */
 } config_t;
 
 #endif /* TYPES_H */
