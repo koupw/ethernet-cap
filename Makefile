@@ -2,7 +2,7 @@ CC      = gcc
 CFLAGS  = -std=c11 -Wall -Wextra -O2
 LDFLAGS = -lws2_32
 
-SRCS    = src/main.c src/udp.c src/ringbuf.c src/writer.c src/stats.c
+SRCS    = src/main.c src/udp.c src/ringbuf.c src/writer.c src/stats.c src/coe.c
 OBJS    = $(SRCS:.c=.o)
 TARGET  = ethernet-cap.exe
 

@@ -3,6 +3,7 @@
 #include "udp.h"
 #include "writer.h"
 #include "stats.h"
+#include "coe.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -125,6 +126,28 @@ static DWORD WINAPI stats_thread_proc(LPVOID param)
 }
 
 /* ================================================================
+ * Packet 构建辅助函数
+ * ================================================================ */
+static size_t build_data_packet(const uint8_t *preamble, uint8_t data_addr,
+    uint8_t seq, const uint8_t *payload, size_t payload_len, uint8_t *buf)
+{
+    memcpy(buf, preamble, 8);
+    buf[8] = data_addr;
+    buf[9] = seq;
+    memcpy(buf + 10, payload, payload_len);
+    return 10 + payload_len;
+}
+
+static size_t build_cmd_packet(const uint8_t *preamble, uint8_t cmd_addr,
+    const uint8_t *start_signal, uint8_t signal_len, uint8_t *buf)
+{
+    memcpy(buf, preamble, 8);
+    buf[8] = cmd_addr;
+    memcpy(buf + 9, start_signal, signal_len);
+    return 9 + signal_len;
+}
+
+/* ================================================================
  * 打印使用帮助
  * ================================================================ */
 static void print_usage(const char *prog)
@@ -147,12 +170,21 @@ static void print_usage(const char *prog)
         "  -T <MB>         总采集量上限, MB (0=无限制, 默认: %d)\n"
         "  --local-ip <ip>  本机 IP 地址 (默认: INADDR_ANY)\n"
         "  --cmd-start <hex> 自定义开始命令 (默认: 01, 示例: 01 02 03)\n"
+        "\n"
+        "COE 发送参数:\n"
+        "  --coe-file <path>   COE 文件路径 (进入发送模式)\n"
+        "  --tx-interval <ms>  发送间隔 (默认: %d ms)\n"
+        "  --preamble <hex>    引导码 8字节 (默认: AA 55 AA 55 AA 55 AA 55)\n"
+        "  --data-addr <hex>   数据地址 (默认: %02X)\n"
+        "  --cmd-addr <hex>    命令地址 (默认: %02X)\n"
         "  -h              显示本帮助\n",
         prog,
         DEFAULT_DATA_PORT, DEFAULT_CMD_PORT,
         DEFAULT_FILE_SIZE_MB, MAX_FILE_SIZE_MB,
         DEFAULT_BUF_SIZE_MB, DEFAULT_TIMEOUT_SEC,
-        DEFAULT_TOTAL_SIZE_MB);
+        DEFAULT_TOTAL_SIZE_MB,
+        DEFAULT_TX_INTERVAL_MS,
+        DEFAULT_DATA_ADDR, DEFAULT_CMD_ADDR);
 }
 
 /* ================================================================
@@ -200,6 +232,14 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
     cfg->local_ip[0]    = '\0';
     cfg->cmd_start[0]   = CMD_START;
     cfg->cmd_start_len  = 1;
+    cfg->coe_file[0]    = '\0';
+    cfg->tx_interval_ms = DEFAULT_TX_INTERVAL_MS;
+    {
+        uint8_t default_preamble[8] = {0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55};
+        memcpy(cfg->preamble, default_preamble, 8);
+    }
+    cfg->data_addr      = DEFAULT_DATA_ADDR;
+    cfg->cmd_addr       = DEFAULT_CMD_ADDR;
     strcpy(cfg->output_dir, ".");
 
     int i = 1;
@@ -235,6 +275,31 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
                 return -1;
             }
             cfg->cmd_start_len = (uint8_t)len;
+        } else if (strcmp(argv[i], "--coe-file") == 0 && i + 1 < argc) {
+            strncpy(cfg->coe_file, argv[++i], sizeof(cfg->coe_file) - 1);
+        } else if (strcmp(argv[i], "--tx-interval") == 0 && i + 1 < argc) {
+            cfg->tx_interval_ms = (uint32_t)atoi(argv[++i]);
+            if (cfg->tx_interval_ms == 0) cfg->tx_interval_ms = 1;
+        } else if (strcmp(argv[i], "--preamble") == 0 && i + 1 < argc) {
+            size_t len = 0;
+            if (parse_hex_string(argv[++i], cfg->preamble, 8, &len) != 0 || len != 8) {
+                fprintf(stderr, "错误: --preamble 必须为8字节十六进制\n");
+                return -1;
+            }
+        } else if (strcmp(argv[i], "--data-addr") == 0 && i + 1 < argc) {
+            unsigned int val;
+            if (sscanf(argv[++i], "%x", &val) != 1 || val > 0xFF) {
+                fprintf(stderr, "错误: --data-addr 无效的十六进制值\n");
+                return -1;
+            }
+            cfg->data_addr = (uint8_t)val;
+        } else if (strcmp(argv[i], "--cmd-addr") == 0 && i + 1 < argc) {
+            unsigned int val;
+            if (sscanf(argv[++i], "%x", &val) != 1 || val > 0xFF) {
+                fprintf(stderr, "错误: --cmd-addr 无效的十六进制值\n");
+                return -1;
+            }
+            cfg->cmd_addr = (uint8_t)val;
         } else {
             fprintf(stderr, "未知参数: %s\n", argv[i]);
             print_usage(argv[0]);
@@ -317,9 +382,114 @@ int main(int argc, char *argv[])
         return 1;
     }
 
+    /* 注册信号处理器 */
+    if (!SetConsoleCtrlHandler(ctrl_handler, TRUE)) {
+        fprintf(stderr, "注册信号处理器失败\n");
+        return 1;
+    }
+
     /* 初始化 Winsock */
     if (udp_init() != 0) return 1;
 
+    /* ================================================================
+     * COE 数据发送模式
+     * ================================================================ */
+    if (cfg.coe_file[0] != '\0') {
+        sock_handle_t tx_sock = udp_create_tx_socket(cfg.local_ip, cfg.target_ip, cfg.cmd_port);
+        if (tx_sock == (sock_handle_t)INVALID_SOCKET) {
+            udp_cleanup();
+            return 1;
+        }
+
+        coe_data_t coe_data;
+        if (coe_parse(cfg.coe_file, &coe_data) != 0) {
+            udp_close(tx_sock);
+            udp_cleanup();
+            return 1;
+        }
+
+        size_t total_pkts = (coe_data.len + COE_DATA_MAX_PER_PKT - 1) / COE_DATA_MAX_PER_PKT;
+        fprintf(stderr, "[COE] 文件: %s\n", cfg.coe_file);
+        fprintf(stderr, "[COE] 数据: %zu 字节, %zu 包\n", coe_data.len, total_pkts);
+        fprintf(stderr, "[COE] 发送间隔: %u ms\n", cfg.tx_interval_ms);
+        fprintf(stderr, "\n按 Enter 开始发送... [__GUI_PROMPT__]\n");
+        fflush(stderr);
+
+        /* 等待 Enter */
+        g_running = true;
+        {
+            HANDLE h_stdin = GetStdHandle(STD_INPUT_HANDLE);
+            DWORD stdin_type = (h_stdin == INVALID_HANDLE_VALUE)
+                             ? FILE_TYPE_UNKNOWN
+                             : GetFileType(h_stdin);
+            bool stdin_is_pipe = (stdin_type == FILE_TYPE_PIPE);
+
+            while (g_running) {
+                int ch = -1;
+                if (_kbhit()) ch = _getch();
+                if (ch < 0 && stdin_is_pipe) {
+                    DWORD avail = 0;
+                    if (PeekNamedPipe(h_stdin, NULL, 0, NULL, &avail, NULL) && avail > 0) {
+                        char c;
+                        DWORD nread = 0;
+                        if (ReadFile(h_stdin, &c, 1, &nread, NULL) && nread == 1)
+                            ch = (unsigned char)c;
+                    }
+                }
+                if (ch >= 0 && (ch == '\r' || ch == '\n')) break;
+                Sleep(50);
+            }
+        }
+
+        if (!g_running) {
+            fprintf(stderr, "[COE] 发送已取消\n");
+            coe_free(&coe_data);
+            udp_close(tx_sock);
+            udp_cleanup();
+            return 0;
+        }
+
+        /* 发送数据包 */
+        uint8_t pkt_buf[10 + COE_DATA_MAX_PER_PKT];
+        uint8_t seq = 0;
+        size_t sent_pkts = 0;
+        size_t offset = 0;
+
+        fprintf(stderr, "[COE] 开始发送...\n");
+        while (offset < coe_data.len && g_running) {
+            size_t chunk = coe_data.len - offset;
+            if (chunk > COE_DATA_MAX_PER_PKT) chunk = COE_DATA_MAX_PER_PKT;
+
+            size_t pkt_len = build_data_packet(cfg.preamble, cfg.data_addr,
+                                               seq, coe_data.data + offset, chunk, pkt_buf);
+            int ret = send((SOCKET)tx_sock, (const char *)pkt_buf, (int)pkt_len, 0);
+            if (ret == SOCKET_ERROR) {
+                fprintf(stderr, "\n[COE] 发送失败: %d\n", WSAGetLastError());
+                break;
+            }
+
+            sent_pkts++;
+            offset += chunk;
+            seq++;
+
+            if (sent_pkts % 100 == 0 || offset >= coe_data.len) {
+                fprintf(stderr, "\r[COE] 已发送: %zu/%zu 包  ", sent_pkts, total_pkts);
+                fflush(stderr);
+            }
+
+            Sleep(cfg.tx_interval_ms);
+        }
+
+        fprintf(stderr, "\n[COE] 发送完成: %zu 包, %zu 字节\n", sent_pkts, offset);
+        coe_free(&coe_data);
+        udp_close(tx_sock);
+        udp_cleanup();
+        return 0;
+    }
+
+    /* ================================================================
+     * 采集模式
+     * ================================================================ */
     /* 创建 socket */
     sock_handle_t data_sock = udp_create_data_socket(cfg.local_ip, cfg.data_port, cfg.timeout_sec);
     if (data_sock == (sock_handle_t)INVALID_SOCKET) {
@@ -327,8 +497,8 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    sock_handle_t cmd_sock = udp_create_cmd_socket(cfg.local_ip, cfg.target_ip, cfg.cmd_port);
-    if (cmd_sock == (sock_handle_t)INVALID_SOCKET) {
+    sock_handle_t tx_sock = udp_create_tx_socket(cfg.local_ip, cfg.target_ip, cfg.cmd_port);
+    if (tx_sock == (sock_handle_t)INVALID_SOCKET) {
         udp_close(data_sock);
         udp_cleanup();
         return 1;
@@ -339,7 +509,7 @@ int main(int argc, char *argv[])
     ringbuf_t *rb = ringbuf_create(buf_bytes);
     if (!rb) {
         fprintf(stderr, "创建环形缓冲区失败\n");
-        udp_close(cmd_sock);
+        udp_close(tx_sock);
         udp_close(data_sock);
         udp_cleanup();
         return 1;
@@ -359,7 +529,7 @@ int main(int argc, char *argv[])
     if (!writer) {
         fprintf(stderr, "创建文件写入器失败\n");
         ringbuf_destroy(rb);
-        udp_close(cmd_sock);
+        udp_close(tx_sock);
         udp_close(data_sock);
         udp_cleanup();
         return 1;
@@ -413,15 +583,24 @@ int main(int argc, char *argv[])
         fprintf(stderr, "[MAIN] 采集已取消\n");
         writer_destroy(writer);
         ringbuf_destroy(rb);
-        udp_close(cmd_sock);
+        udp_close(tx_sock);
         udp_close(data_sock);
         udp_cleanup();
         fprintf(stderr, "[MAIN] 程序正常退出\n");
         return 0;
     }
 
-    /* 发送开始采集命令 */
-    udp_send_cmd_bytes(cmd_sock, cfg.cmd_start, cfg.cmd_start_len);
+    /* 发送开始采集命令（新格式：引导码 + 命令地址 + 开始信号） */
+    {
+        uint8_t cmd_pkt[9 + CMD_START_MAX_LEN];
+        size_t cmd_len = build_cmd_packet(cfg.preamble, cfg.cmd_addr,
+                                          cfg.cmd_start, cfg.cmd_start_len, cmd_pkt);
+        send((SOCKET)tx_sock, (const char *)cmd_pkt, (int)cmd_len, 0);
+        fprintf(stderr, "[CMD] 已发送命令包 (%zu 字节):", cmd_len);
+        for (size_t j = 0; j < cmd_len; j++)
+            fprintf(stderr, " %02X", cmd_pkt[j]);
+        fprintf(stderr, "\n");
+    }
 
     /* 接收线程参数 */
     recv_thread_arg_t recv_arg = { rb, data_sock, &g_running, false };
@@ -469,7 +648,7 @@ int main(int argc, char *argv[])
 
     /* 发送停止采集命令（最多重试 10 次，间隔 50ms） */
     for (int i = 0; i < 10; i++) {
-        udp_send_cmd(cmd_sock, CMD_STOP);
+        udp_send_cmd(tx_sock, CMD_STOP);
         Sleep(5);
     }
 
@@ -480,7 +659,7 @@ int main(int argc, char *argv[])
     /* 释放资源 */
     writer_destroy(writer);
     ringbuf_destroy(rb);
-    udp_close(cmd_sock);
+    udp_close(tx_sock);
     udp_close(data_sock);
     udp_cleanup();
 

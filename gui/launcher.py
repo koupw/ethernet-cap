@@ -27,6 +27,10 @@ FLAG_SPEC = [
     ("timeout",    "-t",          False),
     ("total_size", "-T",          False),
     ("cmd_start",  "--cmd-start", False),
+    ("tx_interval", "--tx-interval", False),
+    ("preamble",   "--preamble",  False),
+    ("data_addr",  "--data-addr", False),
+    ("cmd_addr",   "--cmd-addr",  False),
 ]
 
 DEFAULTS = {spec[0]: "" for spec in FLAG_SPEC}
@@ -34,6 +38,8 @@ DEFAULTS.update({
     "data_port": "9001", "cmd_port": "9002", "output_dir": ".",
     "file_size": "10", "buf_size": "32", "timeout": "5", "total_size": "0",
     "cmd_start": "01",
+    "tx_interval": "1", "preamble": "AA 55 AA 55 AA 55 AA 55",
+    "data_addr": "01", "cmd_addr": "02",
 })
 
 PROMPT_SENTINEL = "__GUI_PROMPT__"
@@ -85,13 +91,26 @@ class LauncherApp:
         self._add_row(left, "总量上限 (MB):", "total_size", False, note="0=无限制")
         self._add_row(left, "开始命令 (hex):", "cmd_start", False, note="例: 01 02 03")
 
+        self._add_section(left, "COE 发送参数")
+        self._add_row(left, "COE 文件:",       "coe_file",     False, browse_file=True)
+        self._add_row(left, "发送间隔 (ms):",  "tx_interval",  False)
+        self._add_row(left, "引导码 (hex):",   "preamble",     False)
+        self._add_row(left, "数据地址:",        "data_addr",    False)
+        self._add_row(left, "命令地址:",        "cmd_addr",     False)
+
         btn_frame = ttk.Frame(left)
         btn_frame.pack(fill=tk.X, pady=(15, 0))
-        self.btn_start = ttk.Button(btn_frame, text="开始采集", command=self.start)
+        row1 = ttk.Frame(btn_frame)
+        row1.pack(fill=tk.X, pady=(0, 5))
+        self.btn_start = ttk.Button(row1, text="开始采集", command=self.start)
         self.btn_start.pack(side=tk.LEFT, padx=(0, 8))
-        self.btn_stop = ttk.Button(btn_frame, text="停止", command=self.stop,
+        self.btn_stop = ttk.Button(row1, text="停止", command=self.stop,
                                    state=tk.DISABLED)
         self.btn_stop.pack(side=tk.LEFT)
+        row2 = ttk.Frame(btn_frame)
+        row2.pack(fill=tk.X)
+        self.btn_send_data = ttk.Button(row2, text="发送数据", command=self.send_coe_data)
+        self.btn_send_data.pack(side=tk.LEFT)
 
         self._add_section(right, "实时输出")
         log_frame = ttk.Frame(right)
@@ -111,7 +130,7 @@ class LauncherApp:
         ttk.Label(parent, text=title, font=("", 10, "bold")).pack(
             anchor=tk.W, pady=(10, 4))
 
-    def _add_row(self, parent, label, key, required, browse=False, note=None):
+    def _add_row(self, parent, label, key, required, browse=False, browse_file=False, note=None):
         frame = ttk.Frame(parent)
         frame.pack(fill=tk.X, pady=2)
 
@@ -127,6 +146,10 @@ class LauncherApp:
             ttk.Button(frame, text="...", width=3,
                        command=lambda e=entry: self._browse_dir(e)
                        ).pack(side=tk.LEFT)
+        elif browse_file:
+            ttk.Button(frame, text="...", width=3,
+                       command=lambda e=entry: self._browse_file(e)
+                       ).pack(side=tk.LEFT)
 
         if note:
             ttk.Label(frame, text=note, foreground="gray").pack(
@@ -137,6 +160,15 @@ class LauncherApp:
 
     def _browse_dir(self, entry):
         path = filedialog.askdirectory(title="选择输出目录")
+        if path:
+            entry.delete(0, tk.END)
+            entry.insert(0, path)
+
+    def _browse_file(self, entry):
+        path = filedialog.askopenfilename(
+            title="选择 COE 文件",
+            filetypes=[("COE 文件", "*.coe"), ("所有文件", "*.*")]
+        )
         if path:
             entry.delete(0, tk.END)
             entry.insert(0, path)
@@ -238,6 +270,44 @@ class LauncherApp:
         self._log(f"[CMD] {' '.join(cmd)}\n")
         self._log("=" * 56 + "\n")
 
+        self._launch_process(cmd, gen)
+
+    def send_coe_data(self):
+        target_ip = self.entries["target_ip"].get().strip()
+        coe_file = self.entries["coe_file"].get().strip()
+        if not target_ip:
+            messagebox.showwarning("参数错误", "下位机 IP 不能为空")
+            return
+        if not coe_file:
+            messagebox.showwarning("参数错误", "COE 文件路径不能为空")
+            return
+
+        self._save_config()
+        self._gen += 1
+        gen = self._gen
+        if self._flush_id is not None:
+            self.root.after_cancel(self._flush_id)
+            self._flush_id = None
+
+        cmd = [EXE_PATH, "-d", target_ip, "--coe-file", coe_file]
+        lip = self.entries["local_ip"].get().strip()
+        if lip:
+            cmd += ["--local-ip", lip]
+        for key, flag in [("tx_interval", "--tx-interval"),
+                          ("preamble", "--preamble"),
+                          ("data_addr", "--data-addr"),
+                          ("cmd_addr", "--cmd-addr")]:
+            val = self.entries[key].get().strip()
+            if val and val != DEFAULTS.get(key, ""):
+                cmd += [flag, val]
+
+        self._clear_log()
+        self._log(f"[CMD] {' '.join(cmd)}\n")
+        self._log("=" * 56 + "\n")
+
+        self._launch_process(cmd, gen)
+
+    def _launch_process(self, cmd, gen):
         try:
             self.process = subprocess.Popen(
                 cmd,
@@ -337,6 +407,7 @@ class LauncherApp:
             e.config(state=state_fields)
         self.btn_start.config(state=tk.DISABLED if running else tk.NORMAL)
         self.btn_stop.config(state=tk.NORMAL if running else tk.DISABLED)
+        self.btn_send_data.config(state=tk.DISABLED if running else tk.NORMAL)
 
     def _on_close(self):
         if self.process and self.process.poll() is None:
