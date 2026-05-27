@@ -27,6 +27,7 @@ FLAG_SPEC = [
     ("timeout",    "-t",          False),
     ("total_size", "-T",          False),
     ("cmd_start",  "--cmd-start", False),
+    ("cmd_stop",   "--cmd-stop",  False),
     ("tx_interval", "--tx-interval", False),
     ("preamble",   "--preamble",  False),
     ("data_addr",  "--data-addr", False),
@@ -38,6 +39,7 @@ DEFAULTS.update({
     "data_port": "9001", "cmd_port": "9002", "output_dir": ".",
     "file_size": "10", "buf_size": "32", "timeout": "5", "total_size": "0",
     "cmd_start": "01",
+    "cmd_stop": "00",
     "tx_interval": "1", "preamble": "AA 55 AA 55 AA 55 AA 55",
     "data_addr": "01", "cmd_addr": "02",
 })
@@ -90,6 +92,7 @@ class LauncherApp:
         self._add_row(left, "超时 (秒):",     "timeout",    False)
         self._add_row(left, "总量上限 (MB):", "total_size", False, note="0=无限制")
         self._add_row(left, "开始命令 (hex):", "cmd_start", False, note="例: 01 02 03")
+        self._add_row(left, "停止命令 (hex):", "cmd_stop",  False)
 
         self._add_section(left, "COE 发送参数")
         self._add_row(left, "COE 文件:",       "coe_file",     False, browse_file=True)

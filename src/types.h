@@ -41,6 +41,8 @@ typedef struct {
     uint32_t total_size_mb;      /* 总采集量上限 MB (0 = 无限制) */
     uint8_t  cmd_start[CMD_START_MAX_LEN]; /* 自定义开始命令字节 */
     uint8_t  cmd_start_len;                /* 开始命令字节长度 */
+    uint8_t  cmd_stop[CMD_START_MAX_LEN];  /* 自定义停止命令字节 */
+    uint8_t  cmd_stop_len;                 /* 停止命令字节长度 */
     /* .coe 发送模式参数 */
     char     coe_file[512];                /* .coe 文件路径 (空串=不使用) */
     uint32_t tx_interval_ms;               /* 发送间隔 ms (默认1) */

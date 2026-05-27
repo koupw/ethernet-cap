@@ -35,7 +35,8 @@ description: |
 - **二进制**格式，不使用文本命令
 - START 命令包：引导码(8B) + 命令地址(1B=0x02) + 开始信号(1~NB)，通过 `build_cmd_packet()` 构建
 - 开始信号支持自定义单/多字节（`--cmd-start` 指定 hex，默认 `0x01`）
-- STOP 固定 `0x00`，通过 `udp_send_cmd()` 发送
+- STOP 命令包：引导码(8B) + 命令地址(1B=0x02) + 停止信号(1~NB)，通过 `build_cmd_packet()` 构建
+- 停止信号支持自定义单/多字节（`--cmd-stop` 指定 hex，默认 `0x00`）
 - 命令通过 UDP 端口 9002 发送至下位机
 
 ### 数据包格式（TX 模式）
@@ -197,6 +198,7 @@ ethernet-cap.exe [选项]
   --total <MB>    同 -T
   --local-ip <ip> 本机 IP 地址（默认：INADDR_ANY）
   --cmd-start <hex> 自定义开始命令（默认：01，示例：01 02 03）
+  --cmd-stop <hex>  自定义停止命令（默认：00）
   -h              显示帮助
 
 COE 发送参数:
@@ -222,6 +224,8 @@ typedef struct {
     uint32_t total_size_mb;      /* 总采集量上限 MB (0 = 无限制) */
     uint8_t  cmd_start[32];      /* 自定义开始命令字节 */
     uint8_t  cmd_start_len;      /* 开始命令字节长度 */
+    uint8_t  cmd_stop[32];       /* 自定义停止命令字节 */
+    uint8_t  cmd_stop_len;       /* 停止命令字节长度 */
     /* COE 发送模式参数 */
     char     coe_file[512];      /* .coe 文件路径 (空串=不使用) */
     uint32_t tx_interval_ms;     /* 发送间隔 ms (默认1) */

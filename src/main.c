@@ -170,6 +170,7 @@ static void print_usage(const char *prog)
         "  -T <MB>         总采集量上限, MB (0=无限制, 默认: %d)\n"
         "  --local-ip <ip>  本机 IP 地址 (默认: INADDR_ANY)\n"
         "  --cmd-start <hex> 自定义开始命令 (默认: 01, 示例: 01 02 03)\n"
+        "  --cmd-stop <hex>  自定义停止命令 (默认: 00)\n"
         "\n"
         "COE 发送参数:\n"
         "  --coe-file <path>   COE 文件路径 (进入发送模式)\n"
@@ -232,6 +233,8 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
     cfg->local_ip[0]    = '\0';
     cfg->cmd_start[0]   = CMD_START;
     cfg->cmd_start_len  = 1;
+    cfg->cmd_stop[0]    = CMD_STOP;
+    cfg->cmd_stop_len   = 1;
     cfg->coe_file[0]    = '\0';
     cfg->tx_interval_ms = DEFAULT_TX_INTERVAL_MS;
     {
@@ -275,6 +278,15 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
                 return -1;
             }
             cfg->cmd_start_len = (uint8_t)len;
+        } else if (strcmp(argv[i], "--cmd-stop") == 0 && i + 1 < argc) {
+            const char *hex = argv[++i];
+            size_t len = 0;
+            if (parse_hex_string(hex, cfg->cmd_stop, CMD_START_MAX_LEN, &len) != 0
+                || len == 0) {
+                fprintf(stderr, "错误: --cmd-stop 无效的十六进制字符串: %s\n", hex);
+                return -1;
+            }
+            cfg->cmd_stop_len = (uint8_t)len;
         } else if (strcmp(argv[i], "--coe-file") == 0 && i + 1 < argc) {
             strncpy(cfg->coe_file, argv[++i], sizeof(cfg->coe_file) - 1);
         } else if (strcmp(argv[i], "--tx-interval") == 0 && i + 1 < argc) {
@@ -647,9 +659,15 @@ int main(int argc, char *argv[])
     }
 
     /* 发送停止采集命令（最多重试 10 次，间隔 50ms） */
-    for (int i = 0; i < 10; i++) {
-        udp_send_cmd(tx_sock, CMD_STOP);
-        Sleep(5);
+    {
+        uint8_t stop_pkt[9 + CMD_START_MAX_LEN];
+        size_t stop_len = build_cmd_packet(cfg.preamble, cfg.cmd_addr,
+                                           cfg.cmd_stop, cfg.cmd_stop_len, stop_pkt);
+        for (int i = 0; i < 10; i++) {
+            send((SOCKET)tx_sock, (const char *)stop_pkt, (int)stop_len, 0);
+            Sleep(5);
+        }
+        fprintf(stderr, "[CMD] 已发送停止命令包 (%zu 字节)\n", stop_len);
     }
 
     /* 排空缓冲区中剩余数据 */
