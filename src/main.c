@@ -175,7 +175,7 @@ static void print_usage(const char *prog)
         "COE 发送参数:\n"
         "  --coe-file <path>   COE 文件路径 (进入发送模式)\n"
         "  --tx-interval <ms>  发送间隔 (默认: %d ms)\n"
-        "  --preamble <hex>    引导码 8字节 (默认: AA 55 AA 55 AA 55 AA 55)\n"
+        "  --preamble <hex>    引导码 8字节 (默认: A5 A5 A5 A5 A5 A5 A5 D5)\n"
         "  --data-addr <hex>   数据地址 (默认: %02X)\n"
         "  --cmd-addr <hex>    命令地址 (默认: %02X)\n"
         "  -h              显示本帮助\n",
@@ -238,7 +238,7 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
     cfg->coe_file[0]    = '\0';
     cfg->tx_interval_ms = DEFAULT_TX_INTERVAL_MS;
     {
-        uint8_t default_preamble[8] = {0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55, 0xAA, 0x55};
+        uint8_t default_preamble[8] = {0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xA5, 0xD5};
         memcpy(cfg->preamble, default_preamble, 8);
     }
     cfg->data_addr      = DEFAULT_DATA_ADDR;
@@ -421,7 +421,25 @@ int main(int argc, char *argv[])
         }
 
         size_t total_pkts = (coe_data.len + COE_DATA_MAX_PER_PKT - 1) / COE_DATA_MAX_PER_PKT;
-        fprintf(stderr, "[COE] 文件: %s\n", cfg.coe_file);
+        {
+            int wlen = MultiByteToWideChar(CP_ACP, 0, cfg.coe_file, -1, NULL, 0);
+            wchar_t *wbuf = malloc((size_t)wlen * sizeof(wchar_t));
+            if (wbuf) {
+                MultiByteToWideChar(CP_ACP, 0, cfg.coe_file, -1, wbuf, wlen);
+                int u8len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, NULL, 0, NULL, NULL);
+                char *u8buf = malloc((size_t)u8len);
+                if (u8buf) {
+                    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, u8buf, u8len, NULL, NULL);
+                    fprintf(stderr, "[COE] 文件: %s\n", u8buf);
+                    free(u8buf);
+                } else {
+                    fprintf(stderr, "[COE] 文件: %s\n", cfg.coe_file);
+                }
+                free(wbuf);
+            } else {
+                fprintf(stderr, "[COE] 文件: %s\n", cfg.coe_file);
+            }
+        }
         fprintf(stderr, "[COE] 数据: %zu 字节, %zu 包\n", coe_data.len, total_pkts);
         fprintf(stderr, "[COE] 发送间隔: %u ms\n", cfg.tx_interval_ms);
         fprintf(stderr, "\n按 Enter 开始发送... [__GUI_PROMPT__]\n");
@@ -463,7 +481,7 @@ int main(int argc, char *argv[])
 
         /* 发送数据包 */
         uint8_t pkt_buf[10 + COE_DATA_MAX_PER_PKT];
-        uint8_t seq = 0;
+        uint8_t seq = 1;
         size_t sent_pkts = 0;
         size_t offset = 0;
 

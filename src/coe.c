@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <windows.h>
 
 #define INITIAL_CAP 4096
 
@@ -72,7 +73,25 @@ int coe_parse(const char *filepath, coe_data_t *coe_data)
 {
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        fprintf(stderr, "无法打开 COE 文件: %s\n", filepath);
+        {
+            int wlen = MultiByteToWideChar(CP_ACP, 0, filepath, -1, NULL, 0);
+            wchar_t *wbuf = malloc((size_t)wlen * sizeof(wchar_t));
+            if (wbuf) {
+                MultiByteToWideChar(CP_ACP, 0, filepath, -1, wbuf, wlen);
+                int u8len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, NULL, 0, NULL, NULL);
+                char *u8buf = malloc((size_t)u8len);
+                if (u8buf) {
+                    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, u8buf, u8len, NULL, NULL);
+                    fprintf(stderr, "无法打开 COE 文件: %s\n", u8buf);
+                    free(u8buf);
+                } else {
+                    fprintf(stderr, "无法打开 COE 文件: %s\n", filepath);
+                }
+                free(wbuf);
+            } else {
+                fprintf(stderr, "无法打开 COE 文件: %s\n", filepath);
+            }
+        }
         return -1;
     }
 

@@ -40,7 +40,7 @@ DEFAULTS.update({
     "file_size": "10", "buf_size": "32", "timeout": "5", "total_size": "0",
     "cmd_start": "01",
     "cmd_stop": "00",
-    "tx_interval": "1", "preamble": "AA 55 AA 55 AA 55 AA 55",
+    "tx_interval": "1", "preamble": "A5 A5 A5 A5 A5 A5 A5 D5",
     "data_addr": "01", "cmd_addr": "02",
 })
 
@@ -53,7 +53,7 @@ class LauncherApp:
         self.root = root
         self.root.title("以太网上位机 - AD 采集控制")
         self.root.resizable(True, True)
-        self.root.minsize(700, 500)
+        self.root.minsize(820, 650)
 
         self.process = None
         self._gen = 0          # 世代计数器，防止过期 after() 回调
@@ -71,7 +71,7 @@ class LauncherApp:
         main = ttk.Frame(self.root, padding=10)
         main.pack(fill=tk.BOTH, expand=True)
 
-        left = ttk.Frame(main, width=300)
+        left = ttk.Frame(main, width=360)
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         left.pack_propagate(False)
 
@@ -140,7 +140,7 @@ class LauncherApp:
         lbl = ttk.Label(frame, text=label, width=18, anchor=tk.W)
         lbl.pack(side=tk.LEFT)
 
-        entry = ttk.Entry(frame, width=20)
+        entry = ttk.Entry(frame, width=24)
         entry.insert(0, DEFAULTS.get(key, ""))
         entry.pack(side=tk.LEFT, padx=(0, 4))
         self.entries[key] = entry

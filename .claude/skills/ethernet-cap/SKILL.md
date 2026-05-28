@@ -40,9 +40,9 @@ description: |
 - 命令通过 UDP 端口 9002 发送至下位机
 
 ### 数据包格式（TX 模式）
-- **数据包**：引导码(8B) + 数据地址(1B=0x01) + 序号(1B, 从0递增) + coe数据(≤1200B)
+- **数据包**：引导码(8B) + 数据地址(1B=0x01) + 序号(1B, 从1递增) + coe数据(≤1200B)
 - **命令包**：引导码(8B) + 命令地址(1B=0x02) + 开始信号(1~NB)
-- 引导码默认：`AA 55 AA 55 AA 55 AA 55`，可通过 `--preamble` 自定义
+- 引导码默认：`A5 A5 A5 A5 A5 A5 A5 D5`，可通过 `--preamble` 自定义
 - 数据地址默认 `0x01`，命令地址默认 `0x02`，均可通过 `--data-addr` / `--cmd-addr` 自定义
 - 发送间隔默认 1ms，可通过 `--tx-interval` 配置
 
@@ -204,7 +204,7 @@ ethernet-cap.exe [选项]
 COE 发送参数:
   --coe-file <path>   COE 文件路径（进入发送模式）
   --tx-interval <ms>  发送间隔（默认：1 ms）
-  --preamble <hex>    引导码 8字节（默认：AA 55 AA 55 AA 55 AA 55）
+  --preamble <hex>    引导码 8字节（默认：A5 A5 A5 A5 A5 A5 A5 D5）
   --data-addr <hex>   数据地址（默认：01）
   --cmd-addr <hex>    命令地址（默认：02）
 ```
