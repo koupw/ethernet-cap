@@ -35,7 +35,7 @@ sock_handle_t udp_create_data_socket(const char *local_ip, uint16_t port, uint32
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char *)&tv, sizeof(tv));
 
     /* 设置接收缓冲区 */
-    int rcvbuf = 64 * 1024 * 1024; /* 64MB */
+    int rcvbuf = 128 * 1024 * 1024; /* 128MB */
     setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (const char *)&rcvbuf, sizeof(rcvbuf));
 
     /* 绑定端口 */

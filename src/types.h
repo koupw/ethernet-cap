@@ -20,9 +20,9 @@
 #define DEFAULT_DATA_PORT    9001
 #define DEFAULT_CMD_PORT     9002
 #define DEFAULT_FILE_SIZE_MB 10
-#define DEFAULT_BUF_SIZE_MB  32
+#define DEFAULT_BUF_SIZE_MB  128
 #define DEFAULT_TIMEOUT_SEC  5
-#define MAX_FILE_SIZE_MB       10
+#define MAX_FILE_SIZE_MB       1024
 #define DEFAULT_TOTAL_SIZE_MB  0
 
 /* 输出文件名格式 */

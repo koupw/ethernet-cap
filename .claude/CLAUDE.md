@@ -54,14 +54,14 @@ coe_parse() ──▶ build_data_packet() ──▶ send() ──▶ Sleep(inter
 - **数据格式**：RX 模式：UDP 载荷 = 原始 AD 采样数据，无协议头，透明写盘。TX 模式：数据包 = 引导码(8B) + 数据地址(1B) + 序号(1B) + coe数据(≤1200B)
 - **命令格式**：二进制，START/STOP 命令包 = 引导码(8B) + 命令地址(1B=0x02) + 信号(1~NB)，通过 UDP 9002 发送。`--cmd-start` 指定开始信号（默认01），`--cmd-stop` 指定停止信号（默认00）
 - **端口约定**：`--data-port` = PC 端 `bind()` 监听端口（下位机→PC 收数据）；`--cmd-port` = 发送端口（PC→下位机 发命令+coe数据）
-- **文件命名**：`<启动时间YYYYMMDD_HHmmss>_<序号0001起>.bin`，每 10MB 切分
+- **文件命名**：`<启动时间YYYYMMDD_HHmmss>_<序号0001起>.bin`，每 10MB 切分（可自定义，最大 1024MB）
 - **退出信号**：`SetConsoleCtrlHandler` 捕获 CTRL_C/BREAK/CLOSE，设 `g_running = false`
 - **GUI ↔ CLI 协议**：CLI 输出 `[__GUI_PROMPT__]` 标记，GUI 检测后自动向 stdin 写回车
 - **stdin 双重检测**：CLI 启动轮询同时检测控制台 `_kbhit()` 和管道 `PeekNamedPipe()`，兼容终端直接运行和 GUI `subprocess.PIPE` 启动
 - **控制台编码**：`SetConsoleOutputCP(CP_UTF8)` + ACP→UTF-8 路径转换，解决 Windows 控制台中文乱码
 - **参数持久化**：点击"开始采集"时自动保存 GUI 参数到 `gui_config.json`，下次启动自动加载
 - **无终端启动**：`run_gui.vbs` 使用 VBS `WScript.Shell.Run(,0)` 完全隐藏终端；CLI 进程以 `CREATE_NO_WINDOW` 启动不弹窗
-- **内核 UDP 接收缓冲**：`SO_RCVBUF` 设为 64MB，减少千兆线速下内核丢包
+- **内核 UDP 接收缓冲**：`SO_RCVBUF` 设为 128MB，减少千兆线速下内核丢包
 - **COE 发送模式**：`--coe-file` 指定 .coe 文件进入发送模式，解析 Xilinx .coe 格式 hex 数据，按 1200B 分包发送，可配置引导码/地址/发送间隔
 - **Packet 构建**：`build_data_packet()` 构建数据包，`build_cmd_packet()` 构建命令包，均在 main.c 中
 

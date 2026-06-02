@@ -37,7 +37,7 @@ FLAG_SPEC = [
 DEFAULTS = {spec[0]: "" for spec in FLAG_SPEC}
 DEFAULTS.update({
     "data_port": "9001", "cmd_port": "9002", "output_dir": ".",
-    "file_size": "10", "buf_size": "32", "timeout": "5", "total_size": "0",
+    "file_size": "10", "buf_size": "128", "timeout": "5", "total_size": "0",
     "cmd_start": "01",
     "cmd_stop": "00",
     "tx_interval": "1", "preamble": "A5 A5 A5 A5 A5 A5 A5 D5",
