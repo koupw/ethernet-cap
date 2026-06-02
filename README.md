@@ -36,8 +36,8 @@ run_gui.vbs
 | `-o <path>` | `.` | 输出目录 |
 | `--data-port N` | `9001` | PC 端数据接收端口 |
 | `--cmd-port N` | `9002` | 命令/数据发送端口 |
-| `-s <MB>` | `10` | 单文件切分大小 |
-| `-b <MB>` | `32` | 环形缓冲区大小 |
+| `-s <MB>` | `10` | 单文件切分大小（最大 1024） |
+| `-b <MB>` | `128` | 环形缓冲区大小 |
 | `-t <sec>` | `5` | 接收超时秒数 |
 | `-T <MB>` | `0` | 总采集量上限（0=无限制） |
 | `--local-ip <ip>` | `INADDR_ANY` | 本机绑定 IP |
@@ -83,7 +83,7 @@ coe_parse() ──▶ build_data_packet() ──▶ send() ──▶ Sleep(inter
 
 ### RX 模式（采集）
 
-UDP 载荷 = 原始 AD 采样数据，无协议头，透明写盘。文件命名 `<时间>_<序号>.bin`（如 `20260528_153000_0001.bin`），每 10MB 切分。
+UDP 载荷 = 原始 AD 采样数据，无协议头，透明写盘。文件命名 `<时间>_<序号>.bin`（如 `20260528_153000_0001.bin`），默认每 10MB 切分（`-s` 可自定义，最大 1024MB）。
 
 ### TX 模式（发送）
 
@@ -124,7 +124,7 @@ ethernet-cap/
 
 - **C11** 标准，Windows Winsock2 API
 - **UDP 单播**，不实现应用层重传
-- **SO_RCVBUF 64MB** 内核缓冲，减少千兆线速下丢包
+- **SO_RCVBUF 128MB** 内核缓冲，减少千兆线速下丢包
 - **双重 stdin 检测**：`_kbhit()` + `PeekNamedPipe()`，兼容终端与 GUI 管道
 - **控制台编码**：`SetConsoleOutputCP(CP_UTF8)` + ACP→UTF-8 路径转换
 - **优雅退出**：`SetConsoleCtrlHandler` 捕获信号，自动发送 STOP 命令
