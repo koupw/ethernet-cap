@@ -441,38 +441,43 @@ class WaveformViewer(QMainWindow):
         self._render_adaptive()
 
     def _on_range_changed(self):
-        """视图范围变化 → 自适应切换渲染模式（防递归）。"""
-        if self._data is None or self._in_range_handler:
+        """视图范围变化 → 自适应切换渲染模式。"""
+        if self._data is None:
             return
-        self._in_range_handler = True
         self._render_adaptive()
-        self._in_range_handler = False
 
     def _render_adaptive(self):
-        """根据可视样本数选择渲染模式。首次渲染用全貌。"""
-        self.plot_widget.clear()
+        """根据可视样本数选择渲染模式（内置递归防护）。"""
+        if self._in_range_handler:
+            return
+        self._in_range_handler = True
 
-        # 恢复游标（clear 后需要重新添加）
-        self.plot_widget.addItem(self.cursor_a)
-        self.plot_widget.addItem(self.cursor_b)
+        try:
+            self.plot_widget.clear()
 
-        vr = self.plot_widget.viewRange()
-        x_min, x_max = vr[0]
-        visible_samples = int((x_max - x_min) * self._fs / self._time_scale)
+            # 恢复游标（clear 后需要重新添加）
+            self.plot_widget.addItem(self.cursor_a)
+            self.plot_widget.addItem(self.cursor_b)
 
-        # 首次渲染强制全貌包络
-        if getattr(self, '_first_render', False):
-            self._first_render = False
-            self._render_envelope()
-            self.plot_widget.autoRange()
-        elif visible_samples < 5000 and not self._is_envelope_uniform():
-            self._render_raw_line(x_min, x_max)
-        else:
-            self._render_envelope()
+            vr = self.plot_widget.viewRange()
+            x_min, x_max = vr[0]
+            visible_samples = int((x_max - x_min) * self._fs / self._time_scale)
 
-        self.plot_widget.setLabel("bottom", f"时间 ({self._time_unit})")
-        self.plot_widget.setTitle(self._title)
-        self._update_status()
+            # 首次渲染强制全貌包络
+            if getattr(self, '_first_render', False):
+                self._first_render = False
+                self._render_envelope()
+                self.plot_widget.autoRange()
+            elif visible_samples < 5000 and not self._is_envelope_uniform():
+                self._render_raw_line(x_min, x_max)
+            else:
+                self._render_envelope()
+
+            self.plot_widget.setLabel("bottom", f"时间 ({self._time_unit})")
+            self.plot_widget.setTitle(self._title)
+            self._update_status()
+        finally:
+            self._in_range_handler = False
 
     def _is_envelope_uniform(self):
         """包络是否均一（ymin==ymax，说明是极小数据无需切换）。"""
