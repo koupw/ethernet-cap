@@ -7,13 +7,13 @@ Python 3 + tkinter，通过 subprocess 启动 ethernet-cap.exe
 import subprocess
 import signal
 import os
+import sys
 import json
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 from dark_theme import apply_dark_theme
-from waveform_viewer import WaveformViewer
 
 EXE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "..", "build", "ethernet-cap.exe")
@@ -444,9 +444,18 @@ class LauncherApp:
     # 波形查看器
     # ------------------------------------------------------------------
     def open_waveform_viewer(self):
+        """启动独立的 PyQtGraph 波形查看器进程。"""
+        import subprocess
         output_dir = self.entries["output_dir"].get().strip() or "."
-        WaveformViewer(parent=self.root, output_dir=output_dir,
-                       theme=self.theme)
+        viewer_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "waveform_viewer.py")
+        try:
+            subprocess.Popen(
+                [sys.executable, viewer_script, "--dir", output_dir],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        except OSError as e:
+            self._log(f"[ERR] 启动波形查看器失败: {e}\n")
 
     # ------------------------------------------------------------------
     # 启动 / 停止
