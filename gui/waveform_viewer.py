@@ -211,6 +211,10 @@ class WaveformViewer(QMainWindow):
         self.plot_widget.setFocusPolicy(Qt.StrongFocus)
         self.plot_widget.keyPressEvent = self._on_key_press
 
+        # 视图范围变化 → 自适应渲染
+        self._in_range_handler = False  # 防递归
+        self.plot_widget.getViewBox().sigRangeChanged.connect(self._on_range_changed)
+
         # --- 状态栏 ---
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -376,11 +380,8 @@ class WaveformViewer(QMainWindow):
         self._data = result
         self.file_label.setText(os.path.basename(self._filepath))
         self._update_fs_display()
-        self._replot()
+        self._replot()  # 内部已调用 _update_status()
         self._refresh_file_list()
-        self.status_label.setText(
-            f"Vmin={result.min():.3f}V  Vmax={result.max():.3f}V  "
-            f"Vpp={result.max()-result.min():.3f}V  样本={len(result):,}")
 
     # ------------------------------------------------------------------
     # 采样率
@@ -397,60 +398,129 @@ class WaveformViewer(QMainWindow):
         self._replot()
 
     # ------------------------------------------------------------------
-    # 绘图
+    # 绘图（两级自适应：放大看原始线，缩小看包络）
     # ------------------------------------------------------------------
     def _replot(self):
+        """全量重绘：计算全时间轴 + 降采样包络，存储后交给 _render_adaptive 决策。"""
         data = self._data
         if data is None or len(data) == 0:
             return
 
-        self.plot_widget.clear()
-
         n = len(data)
 
-        # 降采样到屏幕宽度（确保整数类型）
+        # --- 降采样包络（全局缩放用）---
         view = self.plot_widget.getViewBox()
         screen_w = max(800, int(view.width()) if view.width() > 0 else 1920)
         xs, ymin, ymax = downsample(data, int(screen_w))
 
         # 时间轴
-        t = xs / self._fs
-        time_scale = 1e6 if self._fs >= 1e6 else 1
-        time_unit = "µs" if self._fs >= 1e6 else "s"
-        t_display = t * time_scale
+        self._time_scale = 1e6 if self._fs >= 1e6 else 1
+        self._time_unit  = "µs" if self._fs >= 1e6 else "s"
+
+        # 全量时间轴（原始采样点索引用）
+        self._raw_time = np.arange(n, dtype=np.float64) / self._fs * self._time_scale
+        self._raw_data = data
+
+        # 降采样包络数据
+        self._envelope_t    = xs / self._fs * self._time_scale
+        self._envelope_ymin = ymin
+        self._envelope_ymax = ymax
+        self._envelope_ymid = (ymin + ymax) / 2.0
+
+        # 标题信息
         duration = n / self._fs
-
-        # pyqtgraph 填充曲线
-        curve = pg.PlotCurveItem()
-        self.plot_widget.addItem(curve)
-
-        if np.array_equal(ymin, ymax):
-            curve.setData(t_display, ymin, pen=pg.mkPen(color="#4e9ce8", width=1))
-        else:
-            fill = pg.FillBetweenItem(
-                pg.PlotCurveItem(t_display, ymin, pen=None),
-                pg.PlotCurveItem(t_display, ymax, pen=None),
-                brush=pg.mkBrush(78, 156, 232, 80))
-            self.plot_widget.addItem(fill)
-            # 中线
-            self.plot_widget.plot(t_display, (ymin + ymax) / 2.0,
-                                  pen=pg.mkPen(color="#2d7dd2", width=1))
-
-        self.plot_widget.setLabel("bottom", f"时间 ({time_unit})")
-
-        # 标题
         if duration < 0.001:
-            title = f"AD 采样波形  ({n:,} 样本, {duration*1e6:.1f} µs)"
+            self._title = f"AD 采样波形  ({n:,} 样本, {duration*1e6:.1f} µs)"
         elif duration < 1:
-            title = f"AD 采样波形  ({n:,} 样本, {duration*1e3:.1f} ms)"
+            self._title = f"AD 采样波形  ({n:,} 样本, {duration*1e3:.1f} ms)"
         else:
-            title = f"AD 采样波形  ({n:,} 样本, {duration:.3f} s)"
-        self.plot_widget.setTitle(title)
+            self._title = f"AD 采样波形  ({n:,} 样本, {duration:.3f} s)"
 
-        # 恢复游标
+        # 自适应渲染
+        self._first_render = True
+        self._render_adaptive()
+
+    def _on_range_changed(self):
+        """视图范围变化 → 自适应切换渲染模式（防递归）。"""
+        if self._data is None or self._in_range_handler:
+            return
+        self._in_range_handler = True
+        self._render_adaptive()
+        self._in_range_handler = False
+
+    def _render_adaptive(self):
+        """根据可视样本数选择渲染模式。首次渲染用全貌。"""
+        self.plot_widget.clear()
+
+        # 恢复游标（clear 后需要重新添加）
         self.plot_widget.addItem(self.cursor_a)
         self.plot_widget.addItem(self.cursor_b)
-        self.plot_widget.autoRange()
+
+        vr = self.plot_widget.viewRange()
+        x_min, x_max = vr[0]
+        visible_samples = int((x_max - x_min) * self._fs / self._time_scale)
+
+        # 首次渲染强制全貌包络
+        if getattr(self, '_first_render', False):
+            self._first_render = False
+            self._render_envelope()
+            self.plot_widget.autoRange()
+        elif visible_samples < 5000 and not self._is_envelope_uniform():
+            self._render_raw_line(x_min, x_max)
+        else:
+            self._render_envelope()
+
+        self.plot_widget.setLabel("bottom", f"时间 ({self._time_unit})")
+        self.plot_widget.setTitle(self._title)
+        self._update_status()
+
+    def _is_envelope_uniform(self):
+        """包络是否均一（ymin==ymax，说明是极小数据无需切换）。"""
+        return np.array_equal(self._envelope_ymin, self._envelope_ymax)
+
+    def _render_envelope(self):
+        """降采样 min/max 包络（全局视图）。"""
+        if self._is_envelope_uniform():
+            self.plot_widget.plot(self._envelope_t, self._envelope_ymin,
+                                  pen=pg.mkPen(color="#4e9ce8", width=1))
+        else:
+            fill = pg.FillBetweenItem(
+                pg.PlotCurveItem(self._envelope_t, self._envelope_ymin, pen=None),
+                pg.PlotCurveItem(self._envelope_t, self._envelope_ymax, pen=None),
+                brush=pg.mkBrush(78, 156, 232, 80))
+            self.plot_widget.addItem(fill)
+            self.plot_widget.plot(self._envelope_t, self._envelope_ymid,
+                                  pen=pg.mkPen(color="#2d7dd2", width=1))
+
+    def _render_raw_line(self, x_min, x_max):
+        """放大视图：切片绘制原始采样线，看到每个样本点。"""
+        start_idx = max(0, int(x_min * self._fs / self._time_scale))
+        end_idx   = min(len(self._raw_data),
+                        int(x_max * self._fs / self._time_scale) + 1)
+
+        margin = max(1, (end_idx - start_idx) // 20)
+        start_idx = max(0, start_idx - margin)
+        end_idx   = min(len(self._raw_data), end_idx + margin)
+
+        t = self._raw_time[start_idx:end_idx]
+        v = self._raw_data[start_idx:end_idx]
+        self.plot_widget.plot(t, v, pen=pg.mkPen(color="#4e9ce8", width=0.8))
+
+        # 透明锚点：让 autoRange 知道完整数据范围
+        anchor = pg.PlotDataItem(
+            [self._envelope_t[0], self._envelope_t[-1]], [0, 0],
+            pen=pg.mkPen(color=(0, 0, 0, 0)))  # 全透明但占位
+        self.plot_widget.addItem(anchor)
+
+    def _update_status(self):
+        """更新统计信息。"""
+        data = self._raw_data
+        if data is None:
+            return
+        vmin, vmax = float(data.min()), float(data.max())
+        self.status_label.setText(
+            f"Vmin={vmin:.3f}V  Vmax={vmax:.3f}V  "
+            f"Vpp={vmax-vmin:.3f}V  样本={len(data):,}")
 
     # ------------------------------------------------------------------
     # 游标
@@ -485,8 +555,7 @@ class WaveformViewer(QMainWindow):
         dt = abs(xb - xa)
 
         # 转回秒
-        time_scale = 1e6 if self._fs >= 1e6 else 1
-        dt_sec = dt / time_scale
+        dt_sec = dt / (self._time_scale if hasattr(self, '_time_scale') else 1.0)
 
         time_str = format_time(dt_sec)
         freq_str = ""
@@ -500,8 +569,8 @@ class WaveformViewer(QMainWindow):
         # 电压
         dv_str = ""
         if self._data is not None:
-            idx_a = int(xa * self._fs / time_scale)
-            idx_b = int(xb * self._fs / time_scale)
+            idx_a = int(xa * self._fs / getattr(self, '_time_scale', 1.0))
+            idx_b = int(xb * self._fs / getattr(self, '_time_scale', 1.0))
             n = len(self._data)
             idx_a = max(0, min(n - 1, idx_a))
             idx_b = max(0, min(n - 1, idx_b))
