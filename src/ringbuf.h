@@ -14,5 +14,6 @@ size_t     ringbuf_pop(ringbuf_t *rb, uint8_t *buf, size_t max_len);
 size_t     ringbuf_available(ringbuf_t *rb);
 size_t     ringbuf_free_space(ringbuf_t *rb);
 bool       ringbuf_is_empty(ringbuf_t *rb);
+void       ringbuf_wait_data(ringbuf_t *rb, uint32_t timeout_ms);
 
 #endif /* RINGBUF_H */

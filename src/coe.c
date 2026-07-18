@@ -1,70 +1,41 @@
 #include "coe.h"
+#include "utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <windows.h>
 
-#define INITIAL_CAP 4096
+#define INITIAL_CAP  4096
 
-/* 大小写不敏感查找 */
-static const char *strcasestr_local(const char *haystack, const char *needle)
+/* 确保输出 buffer 有空间容纳额外 need 字节，自动扩容 */
+static int ensure_cap(uint8_t **buf, size_t *cap, size_t len, size_t need)
 {
-    size_t nlen = strlen(needle);
-    for (const char *p = haystack; *p; p++) {
-        if (_strnicmp(p, needle, nlen) == 0) return p;
-    }
-    return NULL;
+    if (len + need <= *cap) return 0;
+    size_t new_cap = *cap * 2;
+    while (new_cap < len + need) new_cap *= 2;
+    uint8_t *tmp = realloc(*buf, new_cap);
+    if (!tmp) return -1;
+    *buf = tmp;
+    *cap = new_cap;
+    return 0;
 }
 
-/* 跳过空白 */
-static const char *skip_ws(const char *p)
+/* 将 hex 字符串解析为字节追加到 buffer */
+static int append_hex_bytes(const char *hex, size_t hlen,
+                             uint8_t **buf, size_t *len, size_t *cap)
 {
-    while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
-        p++;
-    return p;
-}
+    if (hlen == 0) return 0;
+    if (hlen % 2 != 0) return -1;
 
-/* 解析一个 hex token 为字节，追加到 buffer */
-static int append_hex_token(const char *token, size_t tlen,
-                            uint8_t **buf, size_t *len, size_t *cap)
-{
-    /* 跳过前导空白 */
-    while (tlen > 0 && (*token == ' ' || *token == '\t')) { token++; tlen--; }
-    /* 去掉尾部空白 */
-    while (tlen > 0 && (token[tlen-1] == ' ' || token[tlen-1] == '\t')) tlen--;
+    size_t nbytes = hlen / 2;
+    if (ensure_cap(buf, cap, *len, nbytes) != 0) return -1;
 
-    if (tlen == 0) return 0;
-
-    /* 奇数长度补前导0 */
-    char hex[3] = {0};
-    if (tlen % 2 != 0) {
-        hex[0] = '0';
-        hex[1] = token[0];
-        token++; tlen--;
-        unsigned int byte;
-        if (sscanf(hex, "%2x", &byte) != 1) return 0;
-        if (*len >= *cap) {
-            size_t new_cap = *cap * 2;
-            uint8_t *tmp = realloc(*buf, new_cap);
-            if (!tmp) return -1;
-            *buf = tmp;
-            *cap = new_cap;
-        }
-        (*buf)[(*len)++] = (uint8_t)byte;
-    }
-
-    for (size_t i = 0; i < tlen; i += 2) {
-        unsigned int byte;
-        if (sscanf(token + i, "%2x", &byte) != 1) return 0;
-        if (*len >= *cap) {
-            size_t new_cap = *cap * 2;
-            uint8_t *tmp = realloc(*buf, new_cap);
-            if (!tmp) return -1;
-            *buf = tmp;
-            *cap = new_cap;
-        }
-        (*buf)[(*len)++] = (uint8_t)byte;
+    for (size_t i = 0; i < hlen; i += 2) {
+        char pair[3] = { hex[i], hex[i + 1], '\0' };
+        char *end = NULL;
+        unsigned long val = strtoul(pair, &end, 16);
+        if (end != pair + 2) return -1;
+        (*buf)[(*len)++] = (uint8_t)val;
     }
     return 0;
 }
@@ -73,25 +44,9 @@ int coe_parse(const char *filepath, coe_data_t *coe_data)
 {
     FILE *fp = fopen(filepath, "rb");
     if (!fp) {
-        {
-            int wlen = MultiByteToWideChar(CP_ACP, 0, filepath, -1, NULL, 0);
-            wchar_t *wbuf = malloc((size_t)wlen * sizeof(wchar_t));
-            if (wbuf) {
-                MultiByteToWideChar(CP_ACP, 0, filepath, -1, wbuf, wlen);
-                int u8len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, NULL, 0, NULL, NULL);
-                char *u8buf = malloc((size_t)u8len);
-                if (u8buf) {
-                    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, u8buf, u8len, NULL, NULL);
-                    fprintf(stderr, "无法打开 COE 文件: %s\n", u8buf);
-                    free(u8buf);
-                } else {
-                    fprintf(stderr, "无法打开 COE 文件: %s\n", filepath);
-                }
-                free(wbuf);
-            } else {
-                fprintf(stderr, "无法打开 COE 文件: %s\n", filepath);
-            }
-        }
+        char *u8 = acp_to_utf8(filepath);
+        fprintf(stderr, "无法打开 COE 文件: %s\n", u8 ? u8 : filepath);
+        free(u8);
         return -1;
     }
 
@@ -118,29 +73,50 @@ int coe_parse(const char *filepath, coe_data_t *coe_data)
 
     /* 跳过 UTF-8 BOM */
     char *text = content;
-    if ((unsigned char)text[0] == 0xEF &&
+    if (nread >= 3 &&
+        (unsigned char)text[0] == 0xEF &&
         (unsigned char)text[1] == 0xBB &&
         (unsigned char)text[2] == 0xBF) {
         text += 3;
     }
 
-    /* 查找 memory_initialization_vector */
-    const char *data_start = strcasestr_local(text, "memory_initialization_vector");
-    if (!data_start) {
-        /* 回退：尝试把整个文件当 hex 数据解析 */
-        data_start = text;
-    } else {
-        /* 跳过关键字和后面的 = 或 : */
-        data_start += strlen("memory_initialization_vector");
-        data_start = skip_ws(data_start);
-        if (*data_start == '=' || *data_start == ':') {
-            data_start++;
-            data_start = skip_ws(data_start);
+    /* 查找 memory_initialization_vector（大小写不敏感） */
+    const char *data_start = NULL;
+    const char *kw = "memory_initialization_vector";
+    size_t kw_len = strlen(kw);
+
+    for (const char *p = text; *p; p++) {
+        /* 手动大小写不敏感比较（避免依赖 _strnicmp） */
+        int match = 1;
+        for (size_t k = 0; k < kw_len; k++) {
+            char ca = p[k];
+            char cb = kw[k];
+            if (ca >= 'A' && ca <= 'Z') ca += 32;
+            if (cb >= 'A' && cb <= 'Z') cb += 32;
+            if (ca != cb || ca == '\0') { match = 0; break; }
+        }
+        if (match) {
+            data_start = p + kw_len;
+            break;
         }
     }
 
-    /* 分配输出 buffer */
+    if (!data_start) {
+        /* 回退：把整个文件当 hex 数据解析 */
+        data_start = text;
+    } else {
+        /* 跳过 = 或 : */
+        while (*data_start && (*data_start == ' ' || *data_start == '\t' ||
+               *data_start == '\r' || *data_start == '\n' ||
+               *data_start == '=' || *data_start == ':'))
+            data_start++;
+    }
+
+    /* 预估输出 buffer 容量 */
+    size_t remain = strlen(data_start);
+    size_t est_bytes = remain / 3;
     size_t cap = INITIAL_CAP;
+    while (cap < est_bytes && cap < 1024 * 1024) cap *= 2;
     size_t len = 0;
     uint8_t *buf = malloc(cap);
     if (!buf) {
@@ -149,28 +125,74 @@ int coe_parse(const char *filepath, coe_data_t *coe_data)
         return -1;
     }
 
-    /* 按逗号和分号分割 token */
+    /* 解析 hex token */
     const char *p = data_start;
+    char token[256];
+    size_t token_len = 0;
+
     while (*p) {
-        p = skip_ws(p);
-        if (*p == '\0') break;
-
-        /* 找 token 结尾（逗号、分号或文件结尾） */
-        const char *token = p;
-        while (*p && *p != ',' && *p != ';' && *p != '\r' && *p != '\n')
+        /* 跳过空白 */
+        while (*p && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n'))
             p++;
+        if (!*p) break;
 
-        size_t tlen = (size_t)(p - token);
-        if (tlen > 0) {
-            if (append_hex_token(token, tlen, &buf, &len, &cap) != 0) {
-                fprintf(stderr, "解析 COE 数据时内存不足\n");
-                free(buf);
-                free(content);
-                return -1;
+        /* 收集 hex 字符 */
+        token_len = 0;
+        while (*p) {
+            char c = *p;
+            if (c == ',' || c == ';') {
+                /* 分隔符：结束当前 token */
+                if (append_hex_bytes(token, token_len, &buf, &len, &cap) != 0) {
+                    fprintf(stderr, "COE 解析失败：无效 hex 字符\n");
+                    free(buf);
+                    free(content);
+                    return -1;
+                }
+                token_len = 0;
+                p++;
+                break;
             }
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                /* 空白：结束当前 token */
+                if (token_len > 0) {
+                    if (append_hex_bytes(token, token_len, &buf, &len, &cap) != 0) {
+                        fprintf(stderr, "COE 解析失败：无效 hex 字符\n");
+                        free(buf);
+                        free(content);
+                        return -1;
+                    }
+                    token_len = 0;
+                }
+                p++;
+                break;
+            }
+            if (isxdigit((unsigned char)c)) {
+                if (token_len < sizeof(token) - 1)
+                    token[token_len++] = c;
+            } else {
+                /* 非 hex、非分隔符、非空白：可能是注释字符，跳过 */
+                if (token_len > 0) {
+                    if (append_hex_bytes(token, token_len, &buf, &len, &cap) != 0) {
+                        fprintf(stderr, "COE 解析失败：无效 hex 字符\n");
+                        free(buf);
+                        free(content);
+                        return -1;
+                    }
+                    token_len = 0;
+                }
+            }
+            p++;
         }
+    }
 
-        if (*p == ',' || *p == ';') p++;
+    /* 最后残留的 token */
+    if (token_len > 0) {
+        if (append_hex_bytes(token, token_len, &buf, &len, &cap) != 0) {
+            fprintf(stderr, "COE 解析失败：无效 hex 字符\n");
+            free(buf);
+            free(content);
+            return -1;
+        }
     }
 
     free(content);

@@ -1,15 +1,20 @@
 #include "stats.h"
 #include <stdio.h>
+#include <stdatomic.h>
 #include <time.h>
 #include <windows.h>
 
 static volatile size_t g_total_packets = 0;
 static volatile size_t g_total_bytes   = 0;
+static volatile double g_last_pps      = 0.0;
+static volatile double g_last_mbps     = 0.0;
 
 void stats_init(void)
 {
     g_total_packets = 0;
     g_total_bytes   = 0;
+    g_last_pps      = 0.0;
+    g_last_mbps     = 0.0;
 }
 
 void stats_add(size_t packets, size_t bytes)
@@ -25,22 +30,21 @@ size_t stats_total_bytes(void)
 
 double stats_packets_per_sec(void)
 {
-    /* 由 print_loop 内部使用，外部可调用获取瞬时速率 */
-    return 0.0;
+    return g_last_pps;
 }
 
 double stats_mbps(void)
 {
-    return 0.0;
+    return g_last_mbps;
 }
 
-void stats_print_loop(volatile bool *running)
+void stats_print_loop(atomic_bool *running)
 {
     size_t prev_packets = 0;
     size_t prev_bytes   = 0;
     time_t prev_time    = time(NULL);
 
-    while (*running) {
+    while (atomic_load(running)) {
         Sleep(1000);
 
         time_t now         = time(NULL);
@@ -53,6 +57,9 @@ void stats_print_loop(volatile bool *running)
         double pps     = (cur_packets - prev_packets) / elapsed;
         double mbps    = (cur_bytes - prev_bytes) * 8.0 / (elapsed * 1000000.0);
         size_t total_mb = cur_bytes / (1024 * 1024);
+
+        g_last_pps  = pps;
+        g_last_mbps = mbps;
 
         fprintf(stderr, "\r[STATS] 包: %zu | 速率: %.0f pps | 带宽: %.2f Mbps | 累计: %zu MB  ",
                 cur_packets, pps, mbps, total_mb);

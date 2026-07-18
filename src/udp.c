@@ -62,50 +62,6 @@ sock_handle_t udp_create_data_socket(const char *local_ip, uint16_t port, uint32
     return (sock_handle_t)sock;
 }
 
-sock_handle_t udp_create_cmd_socket(const char *local_ip, const char *target_ip, uint16_t port)
-{
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == INVALID_SOCKET) {
-        fprintf(stderr, "创建命令 socket 失败: %d\n", WSAGetLastError());
-        return (sock_handle_t)INVALID_SOCKET;
-    }
-
-    /* 指定本机 IP 时先 bind */
-    if (local_ip && local_ip[0] != '\0') {
-        struct sockaddr_in local_addr;
-        local_addr.sin_family = AF_INET;
-        local_addr.sin_port   = 0;
-        if (inet_pton(AF_INET, local_ip, &local_addr.sin_addr) != 1) {
-            fprintf(stderr, "无效的本机 IP: %s\n", local_ip);
-            closesocket(sock);
-            return (sock_handle_t)INVALID_SOCKET;
-        }
-        if (bind(sock, (struct sockaddr *)&local_addr, sizeof(local_addr)) == SOCKET_ERROR) {
-            fprintf(stderr, "绑定本机 IP %s 失败: %d\n", local_ip, WSAGetLastError());
-            closesocket(sock);
-            return (sock_handle_t)INVALID_SOCKET;
-        }
-    }
-
-    /* 设置目标地址 */
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_port   = htons(port);
-    if (inet_pton(AF_INET, target_ip, &addr.sin_addr) != 1) {
-        fprintf(stderr, "无效的目标 IP: %s\n", target_ip);
-        closesocket(sock);
-        return (sock_handle_t)INVALID_SOCKET;
-    }
-
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) == SOCKET_ERROR) {
-        fprintf(stderr, "connect 命令 socket 失败: %d\n", WSAGetLastError());
-        closesocket(sock);
-        return (sock_handle_t)INVALID_SOCKET;
-    }
-
-    return (sock_handle_t)sock;
-}
-
 sock_handle_t udp_create_tx_socket(const char *local_ip, const char *target_ip, uint16_t port)
 {
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, 0);
