@@ -19,9 +19,7 @@ struct writer_t {
     ringbuf_t  *rb;
     char        output_dir[512];
     char        start_time[32];
-    uint32_t    file_size_limit;    /* 单文件字节上限 */
     FILE       *file;
-    size_t      seq;                /* 当前文件序号 */
     size_t      file_bytes;         /* 当前文件已写字节数 */
     uint8_t    *chunk;              /* 预分配写缓冲，避免循环内 malloc */
 };
@@ -29,15 +27,14 @@ struct writer_t {
 writer_t *writer_create(ringbuf_t *rb, const char *output_dir,
                         uint32_t file_size_mb, const char *start_time)
 {
+    (void)file_size_mb;  /* 不再使用，保留签名兼容 */
     writer_t *w = malloc(sizeof(*w));
     if (!w) return NULL;
 
     w->rb         = rb;
     strncpy(w->output_dir, output_dir, sizeof(w->output_dir) - 1);
     strncpy(w->start_time, start_time, sizeof(w->start_time) - 1);
-    w->file_size_limit = file_size_mb * 1024ULL * 1024ULL;
     w->file       = NULL;
-    w->seq        = 0;
     w->file_bytes = 0;
     w->chunk      = malloc(WRITE_CHUNK_SIZE);
     if (!w->chunk) {
@@ -58,21 +55,20 @@ void writer_destroy(writer_t *w)
     free(w);
 }
 
-static int writer_open_next(writer_t *w)
+static int writer_open(writer_t *w)
 {
     if (w->file) {
         fclose(w->file);
         w->file = NULL;
     }
-    w->seq++;
     w->file_bytes = 0;
 
     /* 确保输出目录存在 */
     CreateDirectoryA(w->output_dir, NULL);
 
     char path[640];
-    snprintf(path, sizeof(path), "%s\\%s_%04zu.bin",
-             w->output_dir, w->start_time, w->seq);
+    snprintf(path, sizeof(path), "%s\\%s.bin",
+             w->output_dir, w->start_time);
 
     w->file = fopen(path, "wb");
     if (!w->file) {
@@ -86,7 +82,7 @@ static int writer_open_next(writer_t *w)
 
 int writer_run(writer_t *w, atomic_bool *running)
 {
-    if (writer_open_next(w) != 0) return -1;
+    if (writer_open(w) != 0) return -1;
 
     while (atomic_load(running)) {
         size_t avail = ringbuf_available(w->rb);
@@ -98,9 +94,6 @@ int writer_run(writer_t *w, atomic_bool *running)
 
         size_t to_read = avail;
         if (to_read > WRITE_CHUNK_SIZE) to_read = WRITE_CHUNK_SIZE;
-        if (w->file_bytes + to_read > w->file_size_limit) {
-            to_read = w->file_size_limit - w->file_bytes;
-        }
 
         size_t got = ringbuf_pop(w->rb, w->chunk, to_read);
         if (got == 0) continue;
@@ -111,12 +104,6 @@ int writer_run(writer_t *w, atomic_bool *running)
             return -1;
         }
         w->file_bytes += written;
-
-        if (w->file_bytes >= w->file_size_limit) {
-            if (writer_open_next(w) != 0) {
-                return -1;
-            }
-        }
     }
 
     return 0;
@@ -124,13 +111,12 @@ int writer_run(writer_t *w, atomic_bool *running)
 
 void writer_flush_remaining(writer_t *w)
 {
+    if (!w->file) return;
+
     while (!ringbuf_is_empty(w->rb)) {
         size_t avail = ringbuf_available(w->rb);
         size_t to_read = avail;
         if (to_read > WRITE_CHUNK_SIZE) to_read = WRITE_CHUNK_SIZE;
-        if (w->file_bytes + to_read > w->file_size_limit) {
-            to_read = w->file_size_limit - w->file_bytes;
-        }
 
         size_t got = ringbuf_pop(w->rb, w->chunk, to_read);
         if (got == 0) break;
@@ -141,10 +127,6 @@ void writer_flush_remaining(writer_t *w)
             break;
         }
         w->file_bytes += written;
-
-        if (w->file_bytes >= w->file_size_limit) {
-            if (writer_open_next(w) != 0) break;
-        }
     }
 
     if (w->file_bytes > 0 && w->file) {

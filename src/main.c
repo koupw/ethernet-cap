@@ -208,7 +208,7 @@ static void print_usage(const char *prog)
         "  -o <path>      输出目录 (默认: 当前目录)\n"
         "  --data-port N   数据接收端口 (默认: %d)\n"
         "  --cmd-port N    命令发送端口 (默认: %d)\n"
-        "  -s <MB>         单文件大小, MB (默认: %d, 最大: %d)\n"
+        "  -s <MB>         (已废弃) 单文件大小 (默认: %d)\n"
         "  -b <MB>         环形缓冲区大小, MB (默认: %d)\n"
         "  -t <sec>        接收超时, 秒 (默认: %d)\n"
         "  -T <MB>         总采集量上限, MB (0=无限制, 默认: %d)\n"
@@ -225,7 +225,7 @@ static void print_usage(const char *prog)
         "  -h              显示本帮助\n",
         prog,
         DEFAULT_DATA_PORT, DEFAULT_CMD_PORT,
-        DEFAULT_FILE_SIZE_MB, MAX_FILE_SIZE_MB,
+        DEFAULT_FILE_SIZE_MB,
         DEFAULT_BUF_SIZE_MB, DEFAULT_TIMEOUT_SEC,
         DEFAULT_TOTAL_SIZE_MB,
         DEFAULT_TX_INTERVAL_MS,
@@ -303,7 +303,8 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
         } else if (strcmp(argv[i], "--cmd-port") == 0 && i + 1 < argc) {
             cfg->cmd_port = (uint16_t)atoi(argv[++i]);
         } else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
-            cfg->file_size_mb = (uint32_t)atoi(argv[++i]);
+            fprintf(stderr, "[WARN] -s 参数已废弃，不再切分文件，始终产出单个 .bin\n");
+            cfg->file_size_mb = (uint32_t)atoi(argv[++i]);  /* 保留兼容 */
         } else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc) {
             cfg->buf_size_mb = (uint32_t)atoi(argv[++i]);
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
@@ -367,11 +368,6 @@ static int parse_args(int argc, char *argv[], config_t *cfg)
     if (cfg->target_ip[0] == '\0') {
         fprintf(stderr, "错误: 必须指定下位机 IP (-d)\n");
         print_usage(argv[0]);
-        return -1;
-    }
-
-    if (cfg->file_size_mb > MAX_FILE_SIZE_MB || cfg->file_size_mb == 0) {
-        fprintf(stderr, "错误: 文件大小须在 1-%d MB 之间\n", MAX_FILE_SIZE_MB);
         return -1;
     }
 
@@ -606,7 +602,7 @@ int main(int argc, char *argv[])
     } else {
         fprintf(stderr, "[MAIN] 采集已启动，按 Ctrl+C 停止\n");
 
-        /* 等待退出信号（Ctrl+C / 超时 / 总量上限） */
+        /* 等待退出信号（Ctrl+C / 超时 / 总量上限 / 管道输入） */
         while (atomic_load(&g_running)) {
             if (cfg.total_size_mb > 0) {
                 size_t total = stats_total_bytes();
@@ -615,6 +611,21 @@ int main(int argc, char *argv[])
                             cfg.total_size_mb, total / (1024 * 1024));
                     atomic_store(&g_running, false);
                     break;
+                }
+            }
+            /* 检测管道输入（GUI 通过 stdin 发送换行来停止） */
+            {
+                DWORD avail = 0;
+                if (PeekNamedPipe(GetStdHandle(STD_INPUT_HANDLE), NULL, 0, NULL, &avail, NULL)
+                    && avail > 0) {
+                    char c;
+                    DWORD read;
+                    if (ReadFile(GetStdHandle(STD_INPUT_HANDLE), &c, 1, &read, NULL)
+                        && read == 1 && (c == '\r' || c == '\n')) {
+                        fprintf(stderr, "\n[MAIN] 收到停止信号，正在退出...\n");
+                        atomic_store(&g_running, false);
+                        break;
+                    }
                 }
             }
             Sleep(1);

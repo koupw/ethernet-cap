@@ -2,20 +2,29 @@
 build/
 tests/runtests.exe
 *.exe
+*.o
 
 # Python 虚拟环境
 venv/
 __pycache__/
+*.pyc
+
+# PyInstaller 打包产物
+dist/
+*.spec.bak
+
+# 运行时错误日志
+*.log
 
 # 编辑器临时文件
 *.swp
 *.swo
 *~
 
-# VS Code 配置（含机器相关路径）
+# VS Code 配置
 .vscode/
 
-# GUI 参数持久化（含用户特定配置）
+# GUI 参数持久化
 gui_config.json
 
 # Claude Code 本地配置
