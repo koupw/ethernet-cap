@@ -42,7 +42,7 @@ mingw32-make test
 |------|--------|------|
 | `-d <ip>` | 必需 | 下位机 IP 地址 |
 | `-o <path>` | `.` | 输出目录 |
-| `--data-port N` | `9001` | 数据接收端口 |
+| `--data-port N` | `1234` | 数据接收端口 |
 | `--cmd-port N` | `9002` | 命令发送端口 |
 | `-b <MB>` | `128` | 环形缓冲区大小 |
 | `-t <sec>` | `3` | 接收超时秒数 |
@@ -64,7 +64,7 @@ mingw32-make test
 
 ```
 采集模式（RX）:
-下位机 ──UDP:9001──▶ recvfrom() ──▶ ringbuf_push() ──▶ stats_add()
+下位机 ──UDP:1234──▶ recvfrom() ──▶ ringbuf_push() ──▶ stats_add()
                                       │
                                       ▼
                                  ringbuf_pop() ──▶ fwrite(.bin)

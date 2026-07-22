@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, QSettings, Signal
 DEFAULTS: dict[str, str] = {
     "target_ip":     "",
     "local_ip":      "",
-    "data_port":     "9001",
+    "data_port":     "1234",
     "cmd_port":      "9002",
     "output_dir":    ".",
     "threshold_mb":  "16",

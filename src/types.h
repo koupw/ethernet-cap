@@ -17,7 +17,7 @@
 #define DEFAULT_CMD_ADDR        0x02
 
 /* 默认配置 */
-#define DEFAULT_DATA_PORT    9001
+#define DEFAULT_DATA_PORT    1234
 #define DEFAULT_CMD_PORT     9002
 #define DEFAULT_FILE_SIZE_MB 10
 #define DEFAULT_BUF_SIZE_MB  128

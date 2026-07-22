@@ -1,8 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec — 以太网上位机 单文件打包"""
+"""PyInstaller spec — 以太网上位机 onedir 打包"""
 
-import os
-import sys
 from pathlib import Path
 
 _base = Path(SPECPATH).resolve()
@@ -35,21 +33,28 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="ethernet-cap",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,         # 无终端窗口
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="ethernet-cap",
 )
